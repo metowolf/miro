@@ -1,0 +1,55 @@
+name: CI
+
+# main 分支的推送与 PR 都跑一次完整测试。
+#
+# release.yml 里也有 bun test，但它只在打 tag 时触发，等于「发布那一刻才第一次知道测试挂了」
+# —— v0.5.0 连续两次发布失败就是这么来的。这个 workflow 把验证提前到进 main 的时候。
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一分支上只保留最新一次运行，新推送直接取消旧的在跑任务。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Test
+        run: bun test
+
+      # 默认 bun test 不覆盖这三个 smoke 脚本（文件名是 *.smoke.js），需要显式运行。
+      # 拆成三条独立 step：写在同一个 shell step 里时首条失败会让后两条根本不执行，
+      # 报告上却只看得到一个失败，分不清是另外两条也挂了还是压根没跑。
+      - name: Smoke test (session store)
+        run: bun test ./test/session-store.smoke.js
+
+      - name: Smoke test (store session)
+        run: bun test ./test/store-session.smoke.js
+
+      - name: Smoke test (paste block render)
+        run: bun test ./test/paste-block.render.smoke.js
+
+      # 编译一次，确保构建约束（插件 stub、版本注入）没被改坏。
+      - name: Build
+        run: bun run build

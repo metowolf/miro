@@ -5,6 +5,32 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+test("Plan mode state persists independently from visible blocks", () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "miro-session-plan-"));
+  try {
+    const script = String.raw`
+      import assert from "node:assert/strict";
+      import { SessionRecorder, loadSessionBlocks } from "./src/session-store.js";
+      const cwd = "/work/example";
+      const recorder = new SessionRecorder({ sessionId: "plan-session", providerId: "miro", cwd });
+      recorder.recordBlock({ role: "user", text: "plan this" });
+      recorder.recordPlanModeState({ mode: "plan", planId: "p1", planPath: "/tmp/p1.md" });
+      recorder.recordPlanModeState({ mode: "default", planId: null, planPath: null });
+      const loaded = loadSessionBlocks("plan-session", cwd, "miro");
+      assert.deepEqual(loaded.planModeState, { mode: "default", planId: null, planPath: null });
+      assert.deepEqual(loaded.blocks, [{ role: "user", text: "plan this" }]);
+    `;
+    const result = spawnSync(process.execPath, ["-e", script], {
+      cwd: path.resolve(import.meta.dirname, ".."),
+      env: { ...process.env, HOME: home },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("ACP raw traffic and ACP/miro visible sessions use separate subdirectories", () => {
   const home = mkdtempSync(path.join(os.tmpdir(), "miro-session-layout-"));
   try {

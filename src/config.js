@@ -66,6 +66,7 @@ Usage:
 Examples:
   miro
   miro -p "Analyze this project"
+  miro -p --mode plan "Design an implementation"
   echo "Summarize this input" | miro -p
   miro -p --output-format json "Fix the tests"
   miro --continue
@@ -86,6 +87,8 @@ Commands:
   /permissions [mode] Set miro permissions: auto (default, routine operations
                       without confirmation) or manual (confirm writes and commands);
                       no mode opens the picker
+  /plan [on|off]      Enter or leave Plan Mode; without an argument,
+                      toggle it (built-in agent only)
   /resume [id]        Resume a saved session; no id opens the session picker
   /continue [id]      Alias for /resume
   /new                Start a new session without clearing the terminal
@@ -130,6 +133,8 @@ Options:
                        (works with -p and when starting the TUI).
                        auto never asks; only high-risk or sandbox-opt-out
                        Terminal calls receive an isolated model review
+  --mode <mode>        Interaction mode: default or plan. In print
+                       mode, plan returns a visible plan without implementing it
   -h, --help           Print this help message
 
 Shortcuts:
@@ -138,7 +143,7 @@ Shortcuts:
   ↑/↓                  Browse input history or completion choices
   Ctrl+M               Select or switch model (needs a terminal that
                        supports the kitty keyboard protocol)
-  Shift+Tab            Cycle session mode
+  Shift+Tab            Cycle interaction mode (Default / Plan)
   Ctrl+O               Browse live and retained thinking, shell output and
                        tool details in the Review window
   Ctrl+Q               Review, edit, reorder, or remove queued messages
@@ -205,12 +210,22 @@ Permission mode:
   /permissions auto     Default: never asks the user; only high-risk or
                         sandbox-opt-out Terminal calls are auto-reviewed
   /permissions manual   Writes, edits, deletes, moves, and commands need approval
-  Shift+Tab cycles auto -> manual. Configure miro.permissionMode in
-  ~/.miro/settings.json to change the startup default. Unknown values,
+  Permission mode is independent from Default / Plan interaction mode.
+  Configure miro.permissionMode in ~/.miro/settings.json to change the startup
+  default. Unknown values,
   including legacy ask, fall back to auto; --permission-mode ask is invalid.
   Auto does not parse command text. A Terminal review that cannot explicitly
   approve the action is denied and returned to the next model round; it never
   falls back to user approval.
+
+Plan mode:
+  /plan                Toggle Default / Plan for the built-in agent
+  /plan status         Show the current interaction mode
+  Shift+Tab            Cycle Default -> Plan
+  Plan Mode keeps the normal tool capabilities while focusing the agent on
+  investigation and design. Approving a proposed plan starts a
+  fresh implementation turn in Default mode. --mode plan is non-interactive:
+  it prints the plan and exits without implementing it.
 
 Prompt language:
   /config language English  Use English for miro's built-in workflow prompts

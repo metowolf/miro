@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isClockRunning, refreshActiveGoal } from "./App.jsx";
+import { isAwaitingInputOverlay, isClockRunning, refreshActiveGoal } from "./App.jsx";
 import { useStore } from "../store.js";
 
 const activeGoal = (wallClockMs) => ({
@@ -39,6 +39,14 @@ test("the second clock also runs for a goal with no tool in flight", () => {
   assert.equal(isClockRunning({ goalActive: true, awaitingInput: true }), false);
   // 整屏接管的面板同理：动态区被整块替换。
   assert.equal(isClockRunning({ goalActive: true, overlayKind: "review-browser" }), false);
+});
+
+test("Plan review and structured questions freeze the UI clock while awaiting input", () => {
+  for (const kind of ["permission", "plan-review", "user-question"]) {
+    assert.equal(isAwaitingInputOverlay(kind), true, kind);
+    assert.equal(isClockRunning({ busy: true, awaitingInput: isAwaitingInputOverlay(kind) }), false, kind);
+  }
+  assert.equal(isAwaitingInputOverlay("model"), false);
 });
 
 test("an active goal's fresh snapshot lands in the store on every tick", () => {

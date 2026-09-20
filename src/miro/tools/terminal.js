@@ -187,6 +187,21 @@ const READONLY_COMMANDS = new Map([
   ["file", null],
   ["which", null],
   ["type", null],
+  ["whereis", null],
+  ["realpath", null],
+  ["readlink", null],
+  ["stat", null],
+  ["du", null],
+  ["df", null],
+  ["tree", null],
+  ["uname", null],
+  ["id", null],
+  ["whoami", null],
+  ["printenv", null],
+  ["ps", null],
+  ["echo", null],
+  ["printf", null],
+  ["command", new Set(["-v", "-V"])],
 ]);
 
 const COMMAND_SEPARATOR = /\s*(?:;|&&|\|\||\|)\s*/;
@@ -195,7 +210,7 @@ const COMMAND_SEPARATOR = /\s*(?:;|&&|\|\||\|)\s*/;
 function commandAndArgs(segment) {
   const tokens = segment.trim().split(/\s+/).filter(Boolean);
   let index = 0;
-  while (index < tokens.length && /^(sudo|nohup|command|env)$/.test(tokens[index])) {
+  while (index < tokens.length && /^(sudo|nohup|env)$/.test(tokens[index])) {
     index += 1;
     while (index < tokens.length && /^-/.test(tokens[index])) index += 1;
   }
@@ -203,22 +218,79 @@ function commandAndArgs(segment) {
   return tokens.slice(index);
 }
 
-export function isReadOnlyCommand(command) {
-  if (typeof command !== "string" || command.trim() === "") return false;
-  // Redirects can create/truncate files or feed shell syntax from an unexpected
-  // source. Pipes and boolean composition are handled below.
-  if (/[<>]/.test(command)) return false;
+/** `/dev/null` 只丢弃输出，不会改变项目；其余重定向仍全部拒绝。 */
+function stripSafeRedirections(command) {
+  return command
+    .replace(/(?:^|\s)(?:\d*>\s*\/dev\/null|2>&1)(?=\s|$)/g, " ")
+    .trim();
+}
+
+/** 只允许查询可执行文件位置这一种命令替换。 */
+function stripSafeCommandSubstitutions(command) {
+  const stripped = command.replace(
+    /\$\(\s*command\s+-(?:v|V)\s+(?:\$[A-Za-z_][A-Za-z0-9_]*|[A-Za-z0-9._+-]+)\s*\)/g,
+    "__command_path__",
+  );
+  return stripped.includes("$(") || stripped.includes("`") ? null : stripped;
+}
+
+function segmentsAreReadOnly(command) {
   for (const segment of command.split(COMMAND_SEPARATOR)) {
     const tokens = commandAndArgs(segment);
     const name = tokens[0];
     if (!name || name.includes("/") || !READONLY_COMMANDS.has(name)) return false;
     const subcommands = READONLY_COMMANDS.get(name);
     if (subcommands != null) {
-      const subcommand = tokens.slice(1).find((token) => !token.startsWith("-"));
+      const subcommand = tokens.slice(1).find((token) => token === "-v" || token === "-V" || !token.startsWith("-"));
       if (!subcommand || !subcommands.has(subcommand)) return false;
+    }
+    if (name === "git") {
+      const subcommandIndex = tokens.findIndex((token, index) => index > 0 && !token.startsWith("-"));
+      const subcommand = tokens[subcommandIndex];
+      const args = tokens.slice(subcommandIndex + 1);
+      // 输出文件与外部 diff/textconv 会绕开「只读子命令」这一层。
+      if (tokens.some((token) => /^--output(?:=|$)|^--ext-diff$|^--textconv$/.test(token))) return false;
+      if (subcommand === "branch") {
+        const safe = /^(?:-a|-r|-v|-vv|--list|--show-current|--contains|--no-contains|--merged|--no-merged|--sort=.*|--format=.*)$/;
+        if (args.some((token) => !safe.test(token))) return false;
+      }
+      if (subcommand === "remote") {
+        const safeRemote = args.length === 0 || (args.length === 1 && args[0] === "-v") ||
+          (args[0] === "get-url" && args.slice(1).every((token) => token === "--all" || token === "--push" || !token.startsWith("-")));
+        if (!safeRemote) return false;
+      }
+    }
+    // find 的这些动作会删除文件、运行任意命令或写出结果文件。
+    if (name === "find" && tokens.some((token) => /^-(?:delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf)$/.test(token))) {
+      return false;
     }
   }
   return true;
+}
+
+/** 支持 `for x in a b; do <只读命令>; done` 这类常见环境探测。 */
+function readOnlyForLoop(command) {
+  const match = command.match(/^for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+([^;]+);\s*do\s+(.+);\s*done$/s);
+  if (!match) return null;
+  const [, variable, rawItems, body] = match;
+  const items = rawItems.trim().split(/\s+/).filter(Boolean);
+  if (items.length === 0 || items.some((item) => !/^[A-Za-z0-9._+-]+$/.test(item))) return false;
+  // body 只能引用循环变量；其它参数展开、算术与通配执行语法不进入宿主 shell。
+  const expansions = body.match(/\$[A-Za-z_][A-Za-z0-9_]*/g) ?? [];
+  if (expansions.some((item) => item !== `$${variable}`)) return false;
+  return segmentsAreReadOnly(body);
+}
+
+export function isReadOnlyCommand(command) {
+  if (typeof command !== "string" || command.trim() === "") return false;
+  let normalized = stripSafeCommandSubstitutions(command.trim());
+  if (normalized == null) return false;
+  normalized = stripSafeRedirections(normalized);
+  // 其余重定向能创建/截断文件；换行、子 shell 与后台执行也扩大了解析边界。
+  if (/[<>\n\r]|\(\s*[^)]|&\s*$/.test(normalized)) return false;
+  const loop = readOnlyForLoop(normalized);
+  if (loop != null) return loop;
+  return segmentsAreReadOnly(normalized);
 }
 
 export function readOnlyHostTerminalTool(cwd, options = {}) {
@@ -227,8 +299,8 @@ export function readOnlyHostTerminalTool(cwd, options = {}) {
     const command = typeof input?.command === "string" ? input.command.trim() : "";
     if (!isReadOnlyCommand(command)) {
       const output =
-        "Explore Bash is read-only. Use ls, find, grep/rg, cat, or read-only git commands only; " +
-        "do not use redirection, scripts, package commands, or commands that change state.";
+        "This terminal is read-only. Use inspection commands such as ls, find, grep/rg, cat, " +
+        "command -v, which, or read-only git commands; only /dev/null output redirection is allowed.";
       return { error: output, content: textContent(output), failed: true };
     }
     return execute(input, context);

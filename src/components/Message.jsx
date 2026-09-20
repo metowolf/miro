@@ -21,6 +21,7 @@ import { Banner } from "./Banner.jsx";
 import { BashCard } from "./BashCard.jsx";
 import { DiffView } from "./DiffView.jsx";
 import { PlanMessage } from "./PlanMessage.jsx";
+import { ProposedPlanMessage } from "./ProposedPlanMessage.jsx";
 
 const ROLE_STYLES = {
   user: { marker: ">", markerColor: "gray", dim: true },
@@ -330,6 +331,7 @@ export const Message = memo(function Message({ block, reviewHint = false, width 
     return <ToolMessage block={block} reviewHint={reviewHint} width={width} />;
   }
   if (block.role === "plan" && block.plan) return <PlanMessage block={block} />;
+  if (block.role === "proposedPlan") return <ProposedPlanMessage block={block} />;
 
   if (block.role === "thought" && block.thought) {
     if (block.thought.displayMode === "hidden") return null;

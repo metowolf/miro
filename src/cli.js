@@ -20,6 +20,7 @@ export function parseCliArgs(args) {
     model: null,
     effort: null,
     permissionMode: null,
+    interactionMode: null,
     help: false,
   };
   const promptParts = [];
@@ -84,6 +85,15 @@ export function parseCliArgs(args) {
         throw new Error(`${arg} must be one of: ${PERMISSION_MODES.join(", ")}`);
       }
       options.permissionMode = value;
+      index += 1;
+      continue;
+    }
+    if (arg === "--mode") {
+      const value = readValue(args, index, arg);
+      if (value !== "default" && value !== "plan") {
+        throw new Error(`${arg} must be one of: default, plan`);
+      }
+      options.interactionMode = value;
       index += 1;
       continue;
     }

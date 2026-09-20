@@ -31,7 +31,7 @@ function miroStream(...rounds) {
   };
 }
 
-function dependencies({ stdout, stderr, records, stream, settings = {} }) {
+function dependencies({ stdout, stderr, records, stream, settings = {}, createPlanFile = null }) {
   return {
     stdout,
     stderr,
@@ -63,6 +63,7 @@ function dependencies({ stdout, stderr, records, stream, settings = {} }) {
               interrupt: () => true,
             }),
             streamCompletion: stream,
+            ...(createPlanFile ? { createPlanFile } : {}),
           },
         });
       }
@@ -99,6 +100,39 @@ test("headless prints the answer and records a transcript under the miro provide
     { role: "user", text: "question" },
     { role: "assistant", text: "hello world" },
   ]);
+});
+
+test("headless --mode plan is non-interactive and prints the plan without implementing", async () => {
+  const out = capture();
+  const err = capture();
+  const records = [];
+  const seen = [];
+  const stream = async function* (request) {
+    seen.push(request.tools.map((schema) => schema.function.name));
+    yield { type: "text", text: "# Implementation plan\n\n1. Change it." };
+  };
+  const code = await runHeadless({
+    prompt: "design this",
+    outputFormat: "text",
+    continueSessionId: null,
+    acp: null,
+    model: null,
+    effort: null,
+    interactionMode: "plan",
+  }, dependencies({
+    stdout: out.collect(new PassThrough()),
+    stderr: err.collect(new PassThrough()),
+    records,
+    stream,
+    createPlanFile: async () => "/tmp/miro-headless-plan.md",
+  }));
+
+  assert.equal(code, 0);
+  assert.equal(out.value(), "# Implementation plan\n\n1. Change it.\n");
+  assert.ok(!seen[0].includes("request_user_input"));
+  assert.ok(!seen[0].includes("exit_plan_mode"));
+  assert.ok(!seen[0].includes("enter_plan_mode"));
+  assert.equal(records.some((entry) => entry.block?.role === "proposedPlan"), false);
 });
 
 test("AGENTS.md is injected only on the first turn under the miro provider", async () => {

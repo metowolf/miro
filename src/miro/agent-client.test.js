@@ -171,6 +171,52 @@ test("rememberIsolatedAnswer ignores empty text", () => {
   assert.deepEqual(client.messages.map((message) => message.content), ["full answer"]);
 });
 
+test("Plan interaction mode is independent from permission mode and rewrites the system prompt", async () => {
+  const created = [];
+  const client = makeClient();
+  client.sessionId = "session-1";
+  client.dependencies.createPlanFile = async (options) => {
+    created.push(options);
+    return "/tmp/session-1-plan.md";
+  };
+
+  assert.equal(client.modes.currentModeId, "default");
+  assert.equal(client.permissionMode, "auto");
+  assert.match(client.systemPrompt(), /enter_plan_mode/);
+
+  const snapshot = await client.setMode("plan");
+  assert.equal(snapshot.mode, "plan");
+  assert.equal(created[0].sessionId, "session-1");
+  assert.equal(client.permissionMode, "auto");
+  assert.equal(client.modes.currentModeId, "plan");
+  assert.match(client.messages[0].content, /Canonical plan file: \/tmp\/session-1-plan\.md/);
+
+  await client.setPermissionMode("manual");
+  assert.equal(client.modes.currentModeId, "plan");
+  assert.equal(client.permissionMode, "manual");
+
+  client.leavePlanMode();
+  assert.deepEqual(client.planModeSnapshot(), { mode: "default", planId: null, planPath: null });
+  assert.match(client.messages[0].content, /enter_plan_mode/);
+});
+
+test("a resumed Plan session restores mode before rebuilding history", () => {
+  const client = makeClient();
+  client.sessionId = "session-1";
+  client.dependencies.loadSessionBlocks = () => ({
+    planModeState: { mode: "plan", planId: "plan-1", planPath: "/tmp/plan-1.md" },
+    blocks: [
+      { role: "user", text: "design it" },
+      { role: "proposedPlan", text: "# Approved plan" },
+    ],
+  });
+
+  assert.equal(client.hydrateMessages(), true);
+  assert.equal(client.modes.currentModeId, "plan");
+  assert.match(client.messages[0].content, /Canonical plan file: \/tmp\/plan-1\.md/);
+  assert.deepEqual(client.messages.slice(1).map((message) => message.role), ["user", "assistant"]);
+});
+
 test("resolveSubagentRouting resolves overrides against the model catalog", () => {
   const client = makeClient();
 

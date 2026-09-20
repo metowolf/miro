@@ -27,6 +27,9 @@
 export const SUBAGENT_EXCLUDED_TOOLS = new Set([
   "spawn_agent",
   "update_tasks",
+  "enter_plan_mode",
+  "exit_plan_mode",
+  "request_user_input",
 ]);
 
 const SUBAGENT_SNAPSHOT_MAX_CHARS = 200_000;

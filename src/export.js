@@ -27,7 +27,7 @@ function renderMarkedBlock(block) {
     }
     return lines;
   }
-  if (block.role === "plan" || block.role === "bashCard") {
+  if (block.role === "plan" || block.role === "proposedPlan" || block.role === "bashCard") {
     return String(block.text ?? "").split("\n");
   }
   if (block.role === "tool") {

@@ -80,6 +80,7 @@ bun start -- -p "Analyze this project"
 | `-c`, `--continue [id]` | 继续会话；省略 `id` 则使用当前项目最近一次会话 |
 | `--resume <id>` | 按指定会话 id 恢复 |
 | `--permission-mode <m>` | miro 权限模式：`auto`（默认）或 `manual` |
+| `--mode <mode>` | 交互模式：`default` 或 `plan` |
 | `-h`, `--help` | 打印帮助 |
 
 `--output-format` 仅能与 `-p` / `--print` 同时使用；`--acp`、`--model`、`--effort` 也可在启动交互式 TUI 时使用，且只影响本次运行。`--acp` 只接受可用 ACP 提供方的 id，不能传 `miro`；已移除的 `--provider` 会报迁移错误。不带 `--print` 的裸提示会报错。`-c` 不带 id 只继续本次启动模式下最近的会话（ACP 还限定为同一 id）；`--resume` 必须提供 id。
@@ -97,6 +98,7 @@ bun start -- -p "Analyze this project"
 | `/config [id] [val]` | 查看或修改 ACP 会话配置项 |
 | `/thinking [mode]` | 设置思考呈现为 `compact`（默认）、`full` 或 `hidden`；不带参数打开选择器 |
 | `/permissions [mode]` | miro 权限模式：`auto`（默认）或 `manual`；不带参数打开选择器 |
+| `/plan [on\|off\|status]` | 进入、退出或查看 Plan 模式（仅 miro） |
 | `/statusline [reset]` | 配置状态栏项目、顺序与颜色 |
 | `/review [text]` | 审查代码改动；不带参数打开选择器（未提交、分支、commit 或自定义指令） |
 | `/goal [text]` | 朝一个目标持续工作，直到模型报告完成或受阻；回复运行中输入新目标会安全中断当前回合并接管。不带参数查看当前目标，另有 `replace`、`status`、`pause`、`resume` / `cancel` 子命令（仅 miro） |
@@ -127,7 +129,7 @@ ACP 声明的提供方专用斜杠命令会原样转发。
 | `?` | 快捷键速查（输入框为空时） |
 | ↑ / ↓ | 输入历史或补全 |
 | Ctrl+M | 选择或切换模型（需要终端支持 kitty 键盘协议，否则该键与 Enter 相同） |
-| Shift+Tab | 循环会话模式 |
+| Shift+Tab | 循环交互模式（`Default` / `Plan`） |
 | Ctrl+O | 打开整屏的 Review 窗口：实时与已保留的思考、shell 输出与工具详情 |
 | Ctrl+Q | 审阅、编辑、重排或删除排队消息 |
 | Ctrl+L | 清除终端显示（不结束 ACP 会话） |
@@ -215,7 +217,7 @@ miro 用到的上游写在 `~/.miro/models.json`。打开 `/model` 会重新读�
 
 可用 `/config sandbox on` 或 `/config sandbox off` 持久化修改这个开关，并立即切换当前会话命令工具的沙箱状态。
 
-`/model` 与 `/effort` 的选择按提供方分别记忆。`miro` 使用 `settings.json` 顶层的 `model` / `effort`，其中 `model` 记为 `provider/id`；ACP 提供方则存在自己的 `providers.<id>` 条目里。`miro` 对象里的 `model` / `effort` 只在顶层偏好缺省或匹配不到时作为回退默认值。对 miro 而言，会话模式就是权限模式，所以 `Shift+Tab` 按 `auto` → `manual` 循环。
+`/model` 与 `/effort` 的选择按提供方分别记忆。`miro` 使用 `settings.json` 顶层的 `model` / `effort`，其中 `model` 记为 `provider/id`；ACP 提供方则存在自己的 `providers.<id>` 条目里。`miro` 对象里的 `model` / `effort` 只在顶层偏好缺省或匹配不到时作为回退默认值。miro 的 `Default` / `Plan` 交互模式与 `Auto` / `Manual` 权限模式相互独立；`Shift+Tab` 循环交互模式。
 
 ### Skill
 
@@ -246,7 +248,7 @@ miro -p "/skill:pdf 提取 invoice.pdf 里的表格"
 
 ### 权限模式
 
-miro 提供 `Auto` 与 `Manual` 两档，默认 `Auto`。`Shift+Tab` 在两者间循环，`/permissions` 可直接指定或打开选择器。
+miro 提供 `Auto` 与 `Manual` 两档，默认 `Auto`。`/permissions` 可直接指定或打开选择器；它与 Plan 模式相互独立。
 
 | 模式 | 行为 |
 |------|------|
@@ -264,6 +266,14 @@ miro --permission-mode manual
 `/permissions` 和启动参数只影响当前运行，不写入配置；持久化默认值可配置 `miro.permissionMode`。旧配置 `ask`、`plan`、`yolo` 和未知值回退到 `auto`，但显式的非法 `--permission-mode` 值会报错。
 
 配置 `permission-mode` 状态栏项后，分别显示 `AUTO`、`MANUAL`。非交互 miro 运行会按实际档位向 stderr 打印说明，stdout 保持纯结果。
+
+### Plan 模式
+
+Plan 模式把调查与设计同实现分开。可通过 `/plan`、`/plan on` 或 Shift+Tab 进入；模型也能请求进入，但必须由用户确认。该模式保留普通的 Terminal、文件写入、子智能体及本地命令能力；专注规划是行为指令，而不是运行时只读限制。规范计划文件保存在 `~/.miro/sessions/<project>/miro/plans/<session>/<plan-id>.md`。
+
+在任一交互模式中，agent 最多可提出四个结构化问题，支持单选、多选、Markdown 选项预览、自定义文本和备注；在 Plan 模式中随后会提交规范计划文件供审阅。批准会冻结当时的精确文本、返回 Default 模式，并从该冻结快照开启一个全新的实现回合；要求修改会留在 Plan 模式；拒绝则退出且不实现。Plan 状态随会话持久化。目标正在运行时不能进入 Plan 模式。非交互运行与子智能体不会暴露提问界面。
+
+`miro -p --mode plan "设计这项改动"` 刻意采用非交互语义：打印计划后退出，不提问、不打开审批界面、也不实现。ACP 提供方继续使用自己的模式行为。
 
 ### 等待动词
 

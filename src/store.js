@@ -753,6 +753,15 @@ export const useStore = create((set, get) => ({
         head: true,
       })
     ),
+  pushProposedPlan: (text, planPath = null) =>
+    set((state) =>
+      appendBlock(flushBeforeStandaloneBlock(state), {
+        role: "proposedPlan",
+        text,
+        planPath,
+        head: true,
+      })
+    ),
   appendChunk: (chunk, messageId) =>
     set((state) =>
       streamChunk(

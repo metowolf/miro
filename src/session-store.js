@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { projectDirectoryName } from "./acp/session-recorder.js";
+import { normalizePlanModeState } from "./miro/plan-mode.js";
 
 /**
  * 会话持久化：~/.miro/sessions/<cwd 拍平后的目录>/<acp|miro>/<sessionId>.jsonl
@@ -395,6 +396,15 @@ export class SessionRecorder {
     );
   }
 
+  recordPlanModeState(state) {
+    const normalized = normalizePlanModeState(state);
+    if (!normalized) return;
+    this.writeEntry(
+      "plan_mode_state",
+      JSON.stringify({ type: "plan_mode_state", version: 1, at: Date.now(), state: normalized })
+    );
+  }
+
   /** 会话文件是否已经开写：本进程内已建出，或恢复的会话原本就存在。 */
   opened() {
     return this.metaWritten || this.established;
@@ -462,6 +472,7 @@ function parseSessionFile(file) {
   let model = null;
   let uiState = null;
   let goalState = null;
+  let planModeState = null;
   let content;
   try {
     if (statSync(file).size > MAX_SESSION_FILE_BYTES) return null;
@@ -493,11 +504,15 @@ function parseSessionFile(file) {
         if (normalized) goalState = normalized;
       }
     }
+    else if (obj.type === "plan_mode_state" && obj.version === 1) {
+      const normalized = normalizePlanModeState(obj.state);
+      if (normalized) planModeState = normalized;
+    }
   }
   if (!meta) return null;
   if (title != null) meta.title = title;
   if (model != null) meta.model = model;
-  return { meta, blocks, uiState, goalState };
+  return { meta, blocks, uiState, goalState, planModeState };
 }
 
 function transcriptFiles(cwd) {
@@ -584,7 +599,13 @@ export function loadSessionBlocks(sessionId, cwd = process.cwd(), providerId = n
   for (const file of candidates) {
     if (!existsSync(file)) continue;
     const parsed = parseSessionFile(file);
-    if (parsed) return { meta: parsed.meta, blocks: parsed.blocks, uiState: parsed.uiState, goalState: parsed.goalState };
+    if (parsed) return {
+      meta: parsed.meta,
+      blocks: parsed.blocks,
+      uiState: parsed.uiState,
+      goalState: parsed.goalState,
+      planModeState: parsed.planModeState,
+    };
   }
   return null;
 }

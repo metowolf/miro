@@ -9,6 +9,7 @@ import { MiroAgentClient } from "../miro/agent-client.js";
 import { catalogKey } from "../miro/models-file.js";
 import { OAUTH_PROVIDERS } from "../miro/oauth-providers.js";
 import { formatElapsed } from "../miro/goal.js";
+import { approvedPlanPrompt } from "../miro/plan-mode.js";
 import {
   DEFAULT_PERMISSION_MODE,
   PERMISSION_MODE_CHOICES,
@@ -111,6 +112,8 @@ import { Composer } from "./Composer.jsx";
 import { InputPrompt } from "./InputPrompt.jsx";
 import { Message } from "./Message.jsx";
 import { PermissionDialog } from "./PermissionDialog.jsx";
+import { PlanReviewDialog } from "./PlanReviewDialog.jsx";
+import { UserQuestionDialog } from "./UserQuestionDialog.jsx";
 import { Picker } from "./picker/Picker.jsx";
 import { PickerFlow } from "./picker/PickerFlow.jsx";
 import { ConfigPanel } from "./ConfigPanel.jsx";
@@ -196,11 +199,18 @@ export function permissionOptionIdForChoice(options, value) {
  */
 const AWAITING_INPUT_OVERLAYS = new Set([
   "permission",
+  "plan-review",
+  "user-question",
   "review-input",
   "export-input",
   "simplify-input",
   "commit-input",
 ]);
+
+/** 阻塞 agent-loop 等用户决策的面板必须冻结动画与秒表。 */
+export function isAwaitingInputOverlay(kind) {
+  return AWAITING_INPUT_OVERLAYS.has(kind);
+}
 
 /**
  * 整屏接管的面板：它们替换掉 <Static> 之下的全部内容（含活动区与状态行），
@@ -325,7 +335,7 @@ function formatSessionAge(ts) {
   return `${day}d ago`;
 }
 
-export function App({ continueSessionId = null, startupAcp = null, startupModel = null, startupEffort = null, startupPermissionMode = null }) {
+export function App({ continueSessionId = null, startupAcp = null, startupModel = null, startupEffort = null, startupPermissionMode = null, startupInteractionMode = null }) {
   const { exit } = useApp();
   const { write } = useStdout();
 
@@ -467,7 +477,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
    * 与 cancelling 是同一类判断（等外部输入、不该有动画），因此下面把它和
    * cancelling 一起交给 ActivitySlot / StatusVerb 短路。
    */
-  const awaitingInput = AWAITING_INPUT_OVERLAYS.has(overlay?.kind);
+  const awaitingInput = isAwaitingInputOverlay(overlay?.kind);
 
   useEffect(() => {
     useStore.getState().setThoughtPaused(awaitingInput);
@@ -662,6 +672,9 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
       // effort 依赖切模型和开启 thinking 后的选项；恢复会话只应用显式参数，
       // 不能因为传了 --effort 就把保存的 model 偏好覆盖到恢复的模型上。
       const applyStartupPreferences = async () => {
+        if (startupInteractionMode != null && modes?.availableModes?.some((mode) => mode.id === startupInteractionMode)) {
+          await client.setMode(startupInteractionMode);
+        }
         if (startupModel != null || !resumed) await applyStartupModel(config);
         if (startupEffort != null || !resumed) await applyStartupEffort();
       };
@@ -700,6 +713,9 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     client.on("goal", (snapshot) => {
       useStore.getState().setGoal(snapshot);
       recorderRef.current?.recordGoalState?.(snapshot);
+    });
+    client.on("plan_mode", (snapshot) => {
+      recorderRef.current?.recordPlanModeState?.(snapshot);
     });
 
     client.on("usage", (payload) => useStore.getState().setUsage(payload));
@@ -767,6 +783,45 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
             );
             store.setOverlay(null);
             resolve(optionId);
+          },
+        });
+      });
+    client.onPlanEntryRequest = () =>
+      new Promise((resolve) => {
+        store.setOverlay({
+          kind: "permission",
+          toolCall: { kind: "mode", title: "Enter Plan Mode", rawInput: null },
+          escapeValue: "decline",
+          items: [
+            { value: "approve", label: "Enter Plan Mode" },
+            { value: "decline", label: "Continue normally" },
+          ],
+          resolve: (value) => {
+            store.setOverlay(null);
+            resolve(value === "approve");
+          },
+        });
+      });
+    client.onPlanReviewRequest = ({ plan, path }) =>
+      new Promise((resolve) => {
+        store.setOverlay({
+          kind: "plan-review",
+          plan,
+          path,
+          resolve: (value) => {
+            store.setOverlay(null);
+            resolve(value ?? { action: "dismiss" });
+          },
+        });
+      });
+    client.onUserInputRequest = (questions) =>
+      new Promise((resolve) => {
+        store.setOverlay({
+          kind: "user-question",
+          questions,
+          resolve: (value) => {
+            store.setOverlay(null);
+            resolve(value);
           },
         });
       });
@@ -1349,6 +1404,35 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
       modeSwitchingRef.current = false;
       setModeSwitching(false);
     }
+  };
+
+  const handlePlanCommand = (args) => {
+    const store = useStore.getState();
+    const modes = store.modes;
+    const available = modes?.availableModes?.map((mode) => mode.id) ?? [];
+    if (!available.includes("plan")) {
+      store.push("system", "Plan Mode is not available for this provider.");
+      return;
+    }
+    const value = String(args ?? "").trim().toLowerCase();
+    if (value === "status") {
+      store.push("system", `${modes.currentModeId === "plan" ? "Plan" : "Default"} Mode is active.`);
+      return;
+    }
+    if (value && !["on", "off"].includes(value)) {
+      store.push("error", "Usage: /plan [on|off|status]");
+      return;
+    }
+    if (store.busy) {
+      store.push("system", "Please wait for the current response to finish before switching Plan Mode.");
+      return;
+    }
+    const target = () => {
+      if (value === "on") return "plan";
+      if (value === "off") return "default";
+      return modes.currentModeId === "plan" ? "default" : "plan";
+    };
+    void applyMode(target());
   };
 
   const applyConfigOptionValue = async (option, value) => {
@@ -2472,6 +2556,10 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
 
   /** /goal 的子命令分派；不认识的词一律当目标正文，避免吞掉真实目标。 */
   const handleGoalCommand = (args) => {
+    if (useStore.getState().modes?.currentModeId === "plan") {
+      useStore.getState().push("system", "Exit Plan Mode before starting or changing a goal.");
+      return;
+    }
     const text = (args ?? "").trim();
     if (text.startsWith("replace ")) {
       const objective = text.slice("replace ".length).trim();
@@ -2538,6 +2626,16 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     } finally {
       flushQueuedThought();
       store.endTurn(result);
+      const transition = result?.transition;
+      if (transition?.type === "plan_entered") {
+        store.queueInput(
+          "Continue the current request in Plan Mode. Inspect the workspace, resolve material uncertainties, and write the implementation plan.",
+          "Continue in Plan Mode",
+        );
+      } else if (transition?.type === "plan_approved") {
+        store.pushProposedPlan(transition.plan, transition.path);
+        store.queueInput(approvedPlanPrompt(transition.plan), "Implement approved plan");
+      }
       drainQueue();
     }
   };
@@ -2606,6 +2704,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
       statusline: (args) => (args.trim() === "reset" ? resetStatusLine() : openStatusLineSetup()),
       thinking: (args) => (args ? setThinkingDisplayByName(args) : openThinkingPicker()),
       permissions: (args) => (args ? setPermissionModeByName(args) : openPermissionPicker()),
+      plan: handlePlanCommand,
       resume: (args) => (args ? resumeById(args) : openSessionPicker()),
       new: startNewSession,
       sessions: listSessionsSummary,
@@ -2748,6 +2847,17 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
             toolCall={overlay.toolCall}
             items={overlay.items}
             escapeValue={overlay.escapeValue}
+            onResolve={(value) => overlay.resolve(value)}
+          />
+        ) : overlay?.kind === "plan-review" ? (
+          <PlanReviewDialog
+            plan={overlay.plan}
+            path={overlay.path}
+            onResolve={(value) => overlay.resolve(value)}
+          />
+        ) : overlay?.kind === "user-question" ? (
+          <UserQuestionDialog
+            questions={overlay.questions}
             onResolve={(value) => overlay.resolve(value)}
           />
         ) : overlay?.kind === "export-input" || overlay?.kind === "oauth-input" ||

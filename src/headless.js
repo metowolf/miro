@@ -134,7 +134,7 @@ export async function runHeadless(options, dependencies = {}) {
     // settings 显式透传：client 构造时缺省会再读一次磁盘，测试注入的配置
     // 就被 ~/.miro/settings.json 覆盖了。
     client = isMiroProvider(provider)
-      ? new MiroAgent({ ...common, settings, permissionMode: options.permissionMode })
+      ? new MiroAgent({ ...common, settings, permissionMode: options.permissionMode, interactive: false })
       : new Client({
         bin: provider.bin,
         args: provider.args,
@@ -177,7 +177,11 @@ export async function runHeadless(options, dependencies = {}) {
 
     sessionId = readyResult.sessionId;
     await applyConfig(client, options, settings, readyResult.resumed, provider.id);
+    if (isMiroProvider(provider) && options.interactionMode != null) {
+      await client.setMode(options.interactionMode);
+    }
     recorder = createRecorder({ sessionId, providerId: provider.id, model: currentModelName(client.modelConfig) });
+    recorder.recordPlanModeState?.(client.planModeSnapshot?.());
     recorder.recordBlock({ role: "user", text: prompt });
     recorder.recordModel(currentModelName(client.modelConfig));
 

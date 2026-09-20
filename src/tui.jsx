@@ -29,9 +29,7 @@ export async function runTui(options) {
     {
       exitOnCtrlC: false,
       stdout,
-      // Ink 的 kitty 键盘协议：只有开它，Ctrl+M 才会以 CSI u 独立到达（否则与
-      // Enter 同为 CR）。auto 模式先查询终端能力，不支持就当没开过。
-      kittyKeyboard: { mode: "auto" },
+      kittyKeyboard: { mode: "enabled" },
     },
   );
   await app.waitUntilExit();

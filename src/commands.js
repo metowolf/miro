@@ -9,6 +9,7 @@ export const SLASH_COMMANDS = [
   { name: "statusline", aliases: [], description: "Configure status line items, order, and colors (/statusline reset to restore defaults)" },
   { name: "thinking", aliases: [], description: "Set thinking display: compact, full, or hidden (/thinking [mode])" },
   { name: "permissions", description: "Set permission mode: Auto (default) or Manual (/permissions [mode])" },
+  { name: "plan", aliases: [], description: "Enter, exit, or show Plan Mode (/plan [on|off|status])" },
   { name: "resume", aliases: ["continue"], description: "Resume a previous session in this project (/resume [id] to pick directly)" },
   { name: "new", aliases: [], description: "Start a fresh session (discard current in-memory transcript)" },
   { name: "sessions", aliases: [], description: "List saved sessions for this project" },

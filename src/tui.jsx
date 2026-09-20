@@ -24,6 +24,7 @@ export async function runTui(options) {
       startupModel={options.model}
       startupEffort={options.effort}
       startupPermissionMode={options.permissionMode}
+      startupInteractionMode={options.interactionMode}
     />,
     {
       exitOnCtrlC: false,

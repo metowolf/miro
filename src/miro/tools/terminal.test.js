@@ -5,6 +5,7 @@ import {
   TERMINAL_DEFINITION,
   SANDBOX_TERMINAL_DEFINITION,
   hostTerminalTool,
+  isReadOnlyCommand,
   normalizeAllowedDomains,
   sandboxPolicy,
   sandboxUnavailableReason,
@@ -12,6 +13,34 @@ import {
   shutdownSandbox,
   terminalDefinition,
 } from "./terminal.js";
+
+test("Plan terminal accepts environment inspection and safe read-only shell composition", () => {
+  const allowed = [
+    "command -v python3",
+    "which -a python3 python go g++ gcc node rustc java 2>/dev/null",
+    'for c in python3 go g++ gcc rustc node javac; do command -v $c >/dev/null 2>&1 && echo "$c: $(command -v $c)"; done',
+    "uname -a && id",
+    "find . -maxdepth 2 -type f | head -20",
+  ];
+  for (const command of allowed) assert.equal(isReadOnlyCommand(command), true, command);
+});
+
+test("Plan terminal still rejects writes and executable shell escape hatches", () => {
+  const rejected = [
+    "echo changed > file.txt",
+    "find . -delete",
+    "find . -exec rm {} +",
+    "git branch new-branch",
+    "git branch -D old-branch",
+    "git remote add origin example.invalid/repo",
+    "git diff --output=changes.txt",
+    "command rm -rf .",
+    "python3 -c 'open(\"x\", \"w\").write(\"x\")'",
+    "for c in python3; do touch $c; done",
+    "for c in python3; do echo $(rm -rf .); done",
+  ];
+  for (const command of rejected) assert.equal(isReadOnlyCommand(command), false, command);
+});
 
 test("terminal normalizes per-call domain allowlists and builds a deny-by-default policy", () => {
   assert.deepEqual(normalizeAllowedDomains(undefined), { ok: true, value: [] });

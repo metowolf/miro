@@ -83,6 +83,69 @@ test("Manual still prompts for side-effecting tools and supports exact session g
   }).prompts, false);
 });
 
+test("Plan mode keeps normal tools while headless removes interactive lifecycle tools", async () => {
+  const seen = [];
+  const streamCompletion = async function* (request) {
+    seen.push(request.tools.map((schema) => schema.function.name));
+    yield { type: "text", text: "planned" };
+  };
+  const base = {
+    cwd: "/workspace",
+    model: "test-model",
+    protocol: "chat-completions",
+    permissionMode: "auto",
+    interactionMode: "plan",
+    plan: { id: "p1", path: "/tmp/p1.md" },
+    maxToolRounds: 1,
+    contextWindow: 128_000,
+    autoCompact: false,
+  };
+
+  await runAgentLoop({ messages: [{ role: "user", content: "plan" }], config: base, handlers: {}, dependencies: { streamCompletion } });
+  assert.ok(seen[0].includes("request_user_input"));
+  assert.ok(seen[0].includes("exit_plan_mode"));
+  assert.ok(seen[0].includes("update_tasks"));
+  assert.ok(seen[0].includes("write_file"));
+  assert.ok(seen[0].includes("terminal"));
+  for (const forbidden of ["enter_plan_mode", "update_goal", "set_goal_budget"]) {
+    assert.ok(!seen[0].includes(forbidden));
+  }
+
+  await runAgentLoop({
+    messages: [{ role: "user", content: "plan" }],
+    config: { ...base, interactive: false },
+    handlers: {},
+    dependencies: { streamCompletion },
+  });
+  assert.ok(!seen[1].includes("request_user_input"));
+  assert.ok(!seen[1].includes("exit_plan_mode"));
+});
+
+test("request_user_input is available in interactive Default mode but never headless", async () => {
+  const seen = [];
+  const streamCompletion = async function* (request) {
+    seen.push(request.tools.map((schema) => schema.function.name));
+    yield { type: "text", text: "done" };
+  };
+  const base = {
+    cwd: "/workspace",
+    model: "test-model",
+    protocol: "chat-completions",
+    permissionMode: "auto",
+    interactionMode: "default",
+    maxToolRounds: 1,
+    contextWindow: 128_000,
+    autoCompact: false,
+  };
+
+  await runAgentLoop({ messages: [{ role: "user", content: "work" }], config: base, handlers: {}, dependencies: { streamCompletion } });
+  await runAgentLoop({ messages: [{ role: "user", content: "work" }], config: { ...base, interactive: false }, handlers: {}, dependencies: { streamCompletion } });
+
+  assert.ok(seen[0].includes("request_user_input"));
+  assert.ok(!seen[0].includes("exit_plan_mode"));
+  assert.ok(!seen[1].includes("request_user_input"));
+});
+
 test("a failed Auto review returns its reason to the model without requesting permission", async () => {
   const messages = [{ role: "user", content: "clean everything" }];
   let completion = 0;

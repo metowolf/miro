@@ -19,6 +19,9 @@
 | `update_tasks` | `tasks` | Update tasks | [update_tasks.md](./update_tasks.md) | `src/miro/tools/update-tasks.js` |
 | `update_goal` | `goal` | Update goal | [update_goal.md](./update_goal.md) | `src/miro/tools/update-goal.js` |
 | `set_goal_budget` | `goal` | Set goal budget | [update_goal.md](./update_goal.md) | `src/miro/tools/update-goal.js` |
+| `enter_plan_mode` | `plan` | Enter Plan Mode | [enter_plan_mode.md](./enter_plan_mode.md) | `src/miro/tools/plan-mode.js` |
+| `request_user_input` | `input` | Question | [request_user_input.md](./request_user_input.md) | `src/miro/tools/plan-mode.js` |
+| `exit_plan_mode` | `plan` | Review Plan | [exit_plan_mode.md](./exit_plan_mode.md) | `src/miro/tools/plan-mode.js` |
 
 ## 这些工具共有的约定
 
@@ -27,7 +30,7 @@
 
 ### kind 决定审批与调度
 
-每个定义都带一个 `kind`：`read` / `search` / `tasks` / `goal` / `edit` / `execute` / `spawn`。
+每个定义都带一个 `kind`：`read` / `search` / `tasks` / `goal` / `edit` / `execute` / `spawn` / `plan` / `input`。
 `kind` 不参与模型可见的 schema，只被循环层用来做三件事：
 
 - **审批**：只有 `CONFIRM_KINDS`（`edit`、`execute`、`delete`、`move`）里的调用才可能弹
@@ -38,7 +41,7 @@
     界面上，否则用户只看到命令没跑。
   - `manual`：所有写入、删除、移动与命令都需审批；读、搜索、任务更新直接执行。
 - **并行**：`CONCURRENCY_SAFE_KINDS` = `read`、`search`、`tasks`、`goal`。
-- **抢跑**：`EAGER_BLOCKED_KINDS` 只有 `spawn`。
+- **抢跑**：`spawn`、`input`、`plan` 不抢跑，避免子智能体或模态交互与流式正文竞争。
 
 ### 同一批调用如何执行
 

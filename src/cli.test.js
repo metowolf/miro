@@ -14,6 +14,7 @@ test("parses the interactive session resume flags", () => {
     model: null,
     effort: null,
     permissionMode: null,
+    interactionMode: null,
     help: false,
   });
   assert.equal(parseCliArgs(["--continue", "sess-456"]).continueSessionId, "sess-456");
@@ -113,4 +114,12 @@ test("--permission-mode accepts Auto and Manual, and removed modes are rejected"
   assert.throws(() => parseCliArgs(["--permission-mode", "nonsense"]), /must be one of/);
   assert.throws(() => parseCliArgs(["--permission-mode", "YOLO"]), /must be one of/);
   assert.throws(() => parseCliArgs(["--permission-mode"]), /requires a value/);
+});
+
+test("--mode selects the interaction mode independently from permissions", () => {
+  assert.equal(parseCliArgs(["--mode", "default"]).interactionMode, "default");
+  assert.equal(parseCliArgs(["--mode", "plan"]).interactionMode, "plan");
+  assert.equal(parseCliArgs(["--mode", "plan", "--permission-mode", "manual"]).permissionMode, "manual");
+  assert.throws(() => parseCliArgs(["--mode"]), /requires a value/);
+  assert.throws(() => parseCliArgs(["--mode", "ask"]), /must be one of: default, plan/);
 });

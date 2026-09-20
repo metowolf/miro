@@ -18,6 +18,14 @@ import {
 } from "./terminal.js";
 import { SPAWN_AGENT_DEFINITION, spawnAgentTool } from "./spawn-agent.js";
 import {
+  ENTER_PLAN_MODE_DEFINITION,
+  EXIT_PLAN_MODE_DEFINITION,
+  REQUEST_USER_INPUT_DEFINITION,
+  enterPlanModeTool,
+  exitPlanModeTool,
+  requestUserInputTool,
+} from "./plan-mode.js";
+import {
   SET_GOAL_BUDGET_DEFINITION,
   UPDATE_GOAL_DEFINITION,
   setGoalBudgetTool,
@@ -41,7 +49,7 @@ export const MAX_PARALLEL_TOOL_CALLS = 8;
  * spawn_agent 起的是拥有共享审批通道的子智能体，循环层无法预判它会不会弹窗，
  * 因此一律留给流结束后的批处理阶段。
  */
-export const EAGER_BLOCKED_KINDS = new Set(["spawn"]);
+export const EAGER_BLOCKED_KINDS = new Set(["spawn", "input", "plan"]);
 
 /**
  * 这条调用能否在流里一出现就开跑。
@@ -78,6 +86,9 @@ export const TOOL_DEFINITIONS = [
   UPDATE_TASKS_DEFINITION,
   UPDATE_GOAL_DEFINITION,
   SET_GOAL_BUDGET_DEFINITION,
+  ENTER_PLAN_MODE_DEFINITION,
+  REQUEST_USER_INPUT_DEFINITION,
+  EXIT_PLAN_MODE_DEFINITION,
 ];
 
 /**
@@ -146,6 +157,10 @@ export function createToolRunners({
   goal = null,
   sandboxManager = null,
   sandboxEnabled = false,
+  plan = null,
+  requestPlanEntry = null,
+  requestUserInput = null,
+  requestPlanReview = null,
 }) {
   const available = new Set(tools);
   const runners = {};
@@ -154,10 +169,15 @@ export function createToolRunners({
   if (available.has("write_file")) runners.write_file = writeFileTool(cwd);
   if (available.has("edit_file")) runners.edit_file = editFileTool(cwd);
   if (available.has("terminal")) {
-    // 两条分支共用同一份参数解析与输出格式，差别只在是否套 sandbox-runtime。
-    runners.terminal = sandboxEnabled
-      ? sandboxedTerminalTool(cwd, { startBash, ...(sandboxManager ? { sandboxManager } : {}) })
-      : (readOnlyShell ? readOnlyHostTerminalTool : hostTerminalTool)(cwd, { startBash });
+    // 三条分支共用同一份参数解析与输出格式，差别只在只读校验与是否套 sandbox-runtime。
+    const selectTerminalTool = () => {
+      if (readOnlyShell) return readOnlyHostTerminalTool(cwd, { startBash });
+      if (sandboxEnabled) {
+        return sandboxedTerminalTool(cwd, { startBash, ...(sandboxManager ? { sandboxManager } : {}) });
+      }
+      return hostTerminalTool(cwd, { startBash });
+    };
+    runners.terminal = selectTerminalTool();
   }
   if (available.has("grep")) runners.grep = grepTool(cwd);
   if (available.has("glob")) runners.glob = globTool(cwd);
@@ -180,6 +200,12 @@ export function createToolRunners({
   if (available.has("set_goal_budget") && goal != null) {
     runners.set_goal_budget = setGoalBudgetTool({ goal });
   }
+  if (available.has("enter_plan_mode")) runners.enter_plan_mode = enterPlanModeTool(requestPlanEntry);
+  if (available.has("request_user_input")) runners.request_user_input = requestUserInputTool(requestUserInput);
+  if (available.has("exit_plan_mode")) {
+    runners.exit_plan_mode = exitPlanModeTool({ plan, requestReview: requestPlanReview });
+  }
+
   return runners;
 }
 

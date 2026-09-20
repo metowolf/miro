@@ -39,11 +39,16 @@ import {
 } from "./models-file.js";
 import {
   DEFAULT_PERMISSION_MODE,
-  PERMISSION_MODE_CHOICES,
   normalizePermissionMode,
 } from "./permission-mode.js";
 import { expandSkillCommand, formatSkillsForPrompt, loadSkills, skillsFromSettings } from "./skills.js";
 import { shutdownSandbox } from "./tools/terminal.js";
+import {
+  PLAN_ENTRY_GUIDANCE,
+  createPlanFile,
+  normalizePlanModeState,
+  planModePrompt,
+} from "./plan-mode.js";
 import { MiroCredentialStore, storedCredentialProviderIds } from "./credential-store.js";
 import { createOAuthModels, oauthCatalogForCredentialIds } from "./oauth-providers.js";
 
@@ -62,6 +67,7 @@ export class MiroAgentClient extends EventEmitter {
     resumeContext = null,
     settings = null,
     permissionMode = null,
+    interactive = true,
     dependencies = {},
   } = {}) {
     super();
@@ -75,6 +81,7 @@ export class MiroAgentClient extends EventEmitter {
     // 第二份同样的规则；hydrate 不出历史时再由 beginSession 把它放回 false。
     this.contextSent = continueSessionId != null;
     this.dependencies = dependencies;
+    this.interactive = interactive;
 
     this.settings = settings ?? readSystemSettings();
     this.modelsFile = dependencies.modelsFile === undefined ? MODELS_FILE : dependencies.modelsFile;
@@ -103,7 +110,10 @@ export class MiroAgentClient extends EventEmitter {
     this.effortConfig = null;
     this.thinkingConfig = null;
     this.configOptions = [];
-    // 会话模式不再是 null：权限模式就是会话模式，Shift+Tab 靠它循环。
+    this.interactionMode = "default";
+    this.planId = null;
+    this.planPath = null;
+    // 交互模式与权限模式正交：Shift+Tab 只循环 Default / Plan。
     this.modes = this.modesPayload();
     this.startupInfo = null;
     this.optimisticConfig = null;
@@ -117,7 +127,6 @@ export class MiroAgentClient extends EventEmitter {
     // 下一轮就失效。换 client（/new、/resume、切 provider）时自然重新开始。
     this.alwaysAllowedTools = new Set();
     this.alwaysRejectedTools = new Set();
-
     // 跨回合的目标状态。放在 client 而不是 runAgentLoop 里，理由同上面两个
     // 集合，只是更强：目标的全部意义就是跨越多次 prompt() 调用而存活。
     this.goal = createGoalState({
@@ -131,6 +140,9 @@ export class MiroAgentClient extends EventEmitter {
       this.resolveDone = resolve;
     });
     this.onPermissionRequest = async () => null;
+    this.onPlanEntryRequest = async () => false;
+    this.onPlanReviewRequest = async () => ({ action: "dismiss" });
+    this.onUserInputRequest = async () => null;
 
     this.refreshConfigs();
   }
@@ -214,11 +226,15 @@ export class MiroAgentClient extends EventEmitter {
     return this.fatalError;
   }
 
-  /** 首条消息固定是 system prompt；恢复历史时也要保持它在最前面。 */
+  /** 首条消息固定是 system prompt；模式切换时原位更新，不能留下互相冲突的 system。 */
   ensureSystemPrompt() {
     if (!SYSTEM_PROMPT) return;
-    if (this.messages[0]?.role === "system") return;
-    this.messages.unshift({ role: "system", content: this.systemPrompt() });
+    const content = this.systemPrompt();
+    if (this.messages[0]?.role === "system") {
+      this.messages[0] = { ...this.messages[0], content };
+      return;
+    }
+    this.messages.unshift({ role: "system", content });
   }
 
   /**
@@ -229,7 +245,13 @@ export class MiroAgentClient extends EventEmitter {
    * 压缩时 head 里的 system 消息又是整条原样带回的，只有一条才不会互相错位。
    */
   systemPrompt() {
-    return [SYSTEM_PROMPT, environmentPrompt({ cwd: this.cwd }), formatSkillsForPrompt(this.skills)]
+    return [
+      SYSTEM_PROMPT,
+      this.interactive && this.interactionMode === "default" ? PLAN_ENTRY_GUIDANCE : "",
+      this.interactionMode === "plan" ? planModePrompt(this.planPath, this.interactive) : "",
+      environmentPrompt({ cwd: this.cwd }),
+      formatSkillsForPrompt(this.skills),
+    ]
       .filter((part) => part.length > 0)
       .join("\n\n");
   }
@@ -251,11 +273,19 @@ export class MiroAgentClient extends EventEmitter {
     }
 
     let restored = 0;
+    const restoredPlan = normalizePlanModeState(saved?.planModeState);
+    if (restoredPlan) {
+      this.interactionMode = restoredPlan.mode;
+      this.planId = restoredPlan.planId;
+      this.planPath = restoredPlan.planPath;
+      this.modes = this.modesPayload();
+      this.ensureSystemPrompt();
+    }
     for (const block of saved?.blocks ?? []) {
-      if (block?.role !== "user" && block?.role !== "assistant") continue;
+      if (block?.role !== "user" && block?.role !== "assistant" && block?.role !== "proposedPlan") continue;
       const content = String(block.text ?? "").trim();
       if (content.length === 0) continue;
-      this.messages.push({ role: block.role, content });
+      this.messages.push({ role: block.role === "proposedPlan" ? "assistant" : block.role, content });
       restored += 1;
     }
     return restored > 0;
@@ -302,7 +332,10 @@ export class MiroAgentClient extends EventEmitter {
         dependencies: this.loopDependencies(),
         goal: this.goal,
       });
-      return { stopReason: result.stopReason };
+      return {
+        stopReason: result.stopReason,
+        ...(result.transition ? { transition: result.transition } : {}),
+      };
     } catch (error) {
       if (inject) this.contextSent = false;
       // cancel() / close() 中断请求时抛出的 AbortError 属于正常结局。
@@ -520,6 +553,9 @@ export class MiroAgentClient extends EventEmitter {
       autoCompact: this.config.autoCompact,
       disabledTools: this.config.disabledTools,
       sandboxEnabled: this.config.sandboxEnabled,
+      interactive: this.interactive,
+      interactionMode: this.interactionMode,
+      plan: this.interactionMode === "plan" ? { id: this.planId, path: this.planPath } : null,
       ...overrides,
     };
   }
@@ -609,6 +645,17 @@ export class MiroAgentClient extends EventEmitter {
       onCompacted: (payload) => this.emit("compacted", payload),
       onPlan: (entries) => this.emit("plan", entries),
       requestPermission: (params) => this.onPermissionRequest(params),
+      requestPlanEntry: async () => {
+        const approved = await this.onPlanEntryRequest();
+        if (approved) await this.enterPlanMode();
+        return approved;
+      },
+      requestUserInput: (questions) => this.onUserInputRequest(questions),
+      requestPlanReview: async (review) => {
+        const result = await this.onPlanReviewRequest(review);
+        if (result?.action === "approve" || result?.action === "reject") this.leavePlanMode();
+        return result;
+      },
       getPermissionMode: () => this.permissionMode,
       getSessionId: () => this.sessionId,
       alwaysAllowed: this.alwaysAllowedTools,
@@ -863,21 +910,52 @@ export class MiroAgentClient extends EventEmitter {
     return normalizePermissionMode(this.config.permissionMode);
   }
 
-  /**
-   * ACP 形状的会话模式载荷。
-   *
-   * 权限模式直接充当 ACP 的 session mode，因此 mode-cycle.js 与状态栏
-   * 不需要区分 provider——它们读的一直是 availableModes / currentModeId。
-   */
+  /** ACP 形状的交互模式载荷；权限模式是独立维度。 */
   modesPayload() {
     return {
-      currentModeId: this.permissionMode,
-      availableModes: PERMISSION_MODE_CHOICES.map((choice) => ({
-        id: choice.value,
-        name: choice.name,
-        description: choice.description,
-      })),
+      currentModeId: this.interactionMode,
+      availableModes: [
+        { id: "default", name: "Default", description: "Inspect and implement changes" },
+        { id: "plan", name: "Plan", description: "Investigate and prepare a plan without implementing" },
+      ],
     };
+  }
+
+  planModeSnapshot() {
+    return { mode: this.interactionMode, planId: this.planId, planPath: this.planPath };
+  }
+
+  async enterPlanMode() {
+    if (this.interactionMode === "plan") return this.planModeSnapshot();
+    if (["pending", "active", "pausing"].includes(this.goalSnapshot()?.status)) {
+      throw new Error("Pause or cancel the active goal before entering Plan Mode");
+    }
+    if (!this.sessionId) throw new Error("Session is not ready");
+    const planId = Bun.randomUUIDv7();
+    const create = this.dependencies.createPlanFile ?? createPlanFile;
+    const planPath = await create({ cwd: this.cwd, sessionId: this.sessionId, planId });
+    this.interactionMode = "plan";
+    this.planId = planId;
+    this.planPath = planPath;
+    this.ensureSystemPrompt();
+    this.modes = this.modesPayload();
+    const snapshot = this.planModeSnapshot();
+    this.emit("mode", this.modes);
+    this.emit("plan_mode", snapshot);
+    return snapshot;
+  }
+
+  leavePlanMode() {
+    if (this.interactionMode !== "plan") return this.planModeSnapshot();
+    this.interactionMode = "default";
+    this.planId = null;
+    this.planPath = null;
+    this.ensureSystemPrompt();
+    this.modes = this.modesPayload();
+    const snapshot = this.planModeSnapshot();
+    this.emit("mode", this.modes);
+    this.emit("plan_mode", snapshot);
+    return snapshot;
   }
 
   /** 运行时切换权限模式，只对当前会话生效（不写 settings）。 */
@@ -892,9 +970,11 @@ export class MiroAgentClient extends EventEmitter {
     return next;
   }
 
-  /** Shift+Tab 与 /mode 走这里；会话模式就是权限模式。 */
+  /** Shift+Tab 与 /plan 走这里；权限模式由 /permissions 单独管理。 */
   async setMode(modeId) {
-    return this.setPermissionMode(modeId);
+    if (modeId === "plan") return this.enterPlanMode();
+    if (modeId === "default") return this.leavePlanMode();
+    throw new Error(`interaction mode "${modeId}" is not available`);
   }
 
   updateConfigs(configOptions) {

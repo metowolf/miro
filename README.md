@@ -80,6 +80,7 @@ bun start -- -p "Analyze this project"
 | `-c`, `--continue [id]` | Resume a session; omit `id` to use the latest for this project |
 | `--resume <id>` | Resume the given session id |
 | `--permission-mode <m>` | miro permission mode: `auto` (default) or `manual` |
+| `--mode <mode>` | Interaction mode: `default` or `plan` |
 | `-h`, `--help` | Print help |
 
 `--output-format` is only valid with `-p` / `--print`; `--acp`, `--model`, and `--effort` also work when starting the interactive TUI and apply only to this run. `--acp` accepts only an available ACP provider id; the removed `--provider` flag reports a migration error. A bare prompt without `--print` is an error. `-c` without an id continues the latest session for the selected mode (and ACP id); `--resume` always requires an id.
@@ -97,6 +98,7 @@ Type these in the interactive composer:
 | `/config [id] [val]` | View or change ACP session config options |
 | `/thinking [mode]` | Set thinking display to `compact` (default), `full`, or `hidden`; no mode opens a picker |
 | `/permissions [mode]` | miro permission mode: `auto` (default) or `manual`; no mode opens a picker |
+| `/plan [on\|off\|status]` | Enter, leave, or inspect Plan Mode (miro only) |
 | `/statusline [reset]` | Configure status-line items, order, and colors |
 | `/review [text]` | Review code changes; with no argument opens a picker (uncommitted, branch, commit, or custom instructions) |
 | `/goal [text]` | Work toward an objective across as many turns as it takes until the model reports it done or blocked; while a response is running, a new objective safely interrupts it and takes over. No text shows the current goal; `replace`, `status`, `pause`, `resume`, and `cancel` manage it (miro only). |
@@ -127,7 +129,7 @@ While a turn is running, ordinary prompts are queued in FIFO order. Slash comman
 | `?` | Shortcut cheatsheet (empty composer) |
 | ↑ / ↓ | Input history or completion |
 | Ctrl+M | Select or switch model (needs a terminal that supports the kitty keyboard protocol, otherwise the key is the same as Enter) |
-| Shift+Tab | Cycle session mode |
+| Shift+Tab | Cycle interaction mode (`Default` / `Plan`) |
 | Ctrl+O | Open the full-screen Review window: live and retained thinking, shell output, and tool details |
 | Ctrl+Q | Review, edit, reorder, or remove queued messages |
 | Ctrl+L | Clear the terminal display (not the ACP session) |
@@ -215,7 +217,7 @@ If `models.json` is missing or has no usable models, miro falls back to the `mir
 
 Use `/config sandbox on` or `/config sandbox off` to update this setting and switch the command tool's sandboxing in the current session.
 
-`/model` and `/effort` choices are remembered per provider. Miro uses top-level `model` / `effort` in `settings.json`, and records the model as `provider/id`; an ACP provider uses its own `providers.<id>` entry. The `model` / `effort` entries inside `miro` are fallback defaults when the top-level preference is absent or unavailable. For miro, the session mode *is* the permission mode, so `Shift+Tab` cycles `auto` → `manual`.
+`/model` and `/effort` choices are remembered per provider. Miro uses top-level `model` / `effort` in `settings.json`, and records the model as `provider/id`; an ACP provider uses its own `providers.<id>` entry. The `model` / `effort` entries inside `miro` are fallback defaults when the top-level preference is absent or unavailable. Miro's `Default` / `Plan` interaction mode is independent from its `Auto` / `Manual` permission mode; `Shift+Tab` cycles the interaction mode.
 
 ### Skills
 
@@ -246,7 +248,7 @@ Model, effort, prompt-language, status-line, and custom ACP-provider preferences
 
 ### Permission mode
 
-Miro offers `Auto` and `Manual`, with `Auto` as the default. `Shift+Tab` cycles between them; `/permissions` selects a mode directly or opens a picker.
+Miro offers `Auto` and `Manual`, with `Auto` as the default. `/permissions` selects a mode directly or opens a picker; this setting is independent from Plan Mode.
 
 | Mode | Behavior |
 |------|----------|
@@ -264,6 +266,14 @@ miro --permission-mode manual
 `/permissions` and CLI overrides affect only the current run; set `miro.permissionMode` to persist a startup preference. Legacy `ask`, `plan`, `yolo`, and unknown settings fall back to `auto`, but invalid explicit `--permission-mode` values are errors.
 
 When configured, the `permission-mode` status-line item shows `AUTO` or `MANUAL`. Headless miro runs print the effective policy to stderr while keeping stdout clean for results.
+
+### Plan mode
+
+Plan Mode separates investigation and design from implementation. Enter it with `/plan`, `/plan on`, or Shift+Tab; the model can also request entry, which requires confirmation. It keeps the normal Terminal, file-write, subagent, and local-command capabilities; planning rather than implementation is a behavioral instruction, not a read-only runtime restriction. The canonical plan is stored under `~/.miro/sessions/<project>/miro/plans/<session>/<plan-id>.md`.
+
+In either interactive mode, the agent can ask up to four structured questions with single-select or multi-select answers, optional Markdown previews, custom text, and notes. In Plan Mode it then submits the canonical file for review. Approving freezes that exact text, returns to Default Mode, and starts a fresh implementation turn from the frozen snapshot. Requesting changes keeps Plan Mode active; rejecting exits without implementation. Plan state is persisted with the session. Plan Mode cannot start while a goal is actively running. Non-interactive runs and subagents never expose the question UI.
+
+`miro -p --mode plan "Design this change"` is intentionally non-interactive: it prints a plan and exits without asking questions, opening approval UI, or implementing the result. ACP providers keep their own mode behavior.
 
 ### Spinner verbs
 

@@ -10,6 +10,7 @@ import {
   deleteBeforeCursor,
   expandPasteMarkers,
   insertPastedText,
+  insertTextAtCursor,
   normalizePastedText,
   pruneOrphanPastes,
   segmentInput,
@@ -94,6 +95,7 @@ function ShortcutHelp() {
         <Text dimColor>! for shell mode</Text>
         <Text dimColor>/ for commands</Text>
         <Text dimColor>@ for file paths</Text>
+        <Text dimColor>shift + enter newline</Text>
       </Box>
       <Box flexDirection="column" width={32}>
         <Text dimColor>shift + tab to cycle mode</Text>
@@ -421,6 +423,12 @@ export function Composer({
         return;
       }
       if (helpOpen) onHelpOpenChange?.(false);
+
+      if (key.return && (key.shift || key.meta)) {
+        const next = insertTextAtCursor(currentChars, currentCursor, "\n");
+        replace(next.chars, next.cursor);
+        return;
+      }
 
       if (showSuggestions) {
         if (key.upArrow) {

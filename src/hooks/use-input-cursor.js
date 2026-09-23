@@ -95,6 +95,11 @@ function wrappedCaretPosition({ x, y, width }, text, rowOffset) {
   let column = 0;
   let row = 0;
   for (const character of [...text]) {
+    if (character === "\n") {
+      row += 1;
+      column = 0;
+      continue;
+    }
     const characterWidth = stringWidth(character);
     if (characterWidth > 0 && column > 0 && column + characterWidth > width) {
       row += 1;

@@ -9,6 +9,11 @@ import { shouldWrapSyncOutput } from "./term-caps.js";
 import { errorMessage } from "./utils.js";
 import { formatSessionTokenUsage } from "./status-line/items.js";
 
+// Kitty CSI-u 由 Ink 管理；tmux 只接受 xterm modifyOtherKeys 请求，再按自身的
+// extended-keys 配置把 Shift+Enter 转发给 pane。两种协议需要同时开启。
+const ENABLE_MODIFY_OTHER_KEYS = "\x1b[>4;2m";
+const DISABLE_MODIFY_OTHER_KEYS = "\x1b[>4m";
+
 export async function runTui(options) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     process.stderr.write("miro must be run in an interactive terminal. Use -p for non-interactive mode.\n");
@@ -17,22 +22,28 @@ export async function runTui(options) {
 
   // Ink 每帧会先擦除再重写；支持 DEC 2026 的终端把这两步作为原子帧提交。
   const stdout = shouldWrapSyncOutput() ? createSyncStdout(process.stdout) : process.stdout;
-  const app = render(
-    <App
-      continueSessionId={options.continueSessionId}
-      startupAcp={options.acp}
-      startupModel={options.model}
-      startupEffort={options.effort}
-      startupPermissionMode={options.permissionMode}
-      startupInteractionMode={options.interactionMode}
-    />,
-    {
-      exitOnCtrlC: false,
-      stdout,
-      kittyKeyboard: { mode: "enabled" },
-    },
-  );
-  await app.waitUntilExit();
+  process.stdout.write(ENABLE_MODIFY_OTHER_KEYS);
+  let app;
+  try {
+    app = render(
+      <App
+        continueSessionId={options.continueSessionId}
+        startupAcp={options.acp}
+        startupModel={options.model}
+        startupEffort={options.effort}
+        startupPermissionMode={options.permissionMode}
+        startupInteractionMode={options.interactionMode}
+      />,
+      {
+        exitOnCtrlC: false,
+        stdout,
+        kittyKeyboard: { mode: "enabled" },
+      },
+    );
+    await app.waitUntilExit();
+  } finally {
+    process.stdout.write(DISABLE_MODIFY_OTHER_KEYS);
+  }
 
   const { fatalError, sessionId, sessionTokens, sessionCost } = useStore.getState();
   if (fatalError) {

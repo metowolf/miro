@@ -11,6 +11,7 @@ import {
   findPasteMarkers,
   formatPasteMarker,
   insertPastedText,
+  insertTextAtCursor,
   normalizePastedText,
   pruneOrphanPastes,
   segmentInput,
@@ -61,6 +62,17 @@ test("large paste becomes a single marker and keeps the original text", () => {
   assert.equal(result.id, 1);
   assert.equal(result.pastes.get(1), body);
   assert.equal(expandPasteMarkers(result.chars.join(""), result.pastes), body);
+});
+
+test("text inserts at the code-point cursor", () => {
+  assert.deepEqual(insertTextAtCursor([..."abcd"], 2, "\n"), {
+    chars: [..."ab\ncd"],
+    cursor: 3,
+  });
+  assert.deepEqual(insertTextAtCursor([..."你😀好"], 2, "\n"), {
+    chars: [..."你😀\n好"],
+    cursor: 3,
+  });
 });
 
 test("paste inserts at the cursor and keeps surrounding text", () => {

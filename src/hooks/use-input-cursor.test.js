@@ -18,6 +18,12 @@ test("caretPosition wraps CJK by terminal cells instead of code points", () => {
   assert.deepEqual(caretPosition({ x: 2, y: 4, width: 5 }, 0, { text: "中文中文中文" }), { x: 6, y: 6 });
 });
 
+test("caretPosition follows explicit newlines", () => {
+  assert.deepEqual(caretPosition({ x: 2, y: 4, width: 10 }, 0, { text: "ab\ncd" }), { x: 4, y: 5 });
+  assert.deepEqual(caretPosition({ x: 2, y: 4, width: 10 }, 0, { text: "a\n\nb" }), { x: 3, y: 6 });
+  assert.deepEqual(caretPosition({ x: 2, y: 4, width: 3 }, 0, { text: "abc\nd" }), { x: 3, y: 6 });
+});
+
 test("caretPosition degrades to a plain offset when the width is unknown", () => {
   assert.deepEqual(caretPosition({ x: 0, y: 0, width: 0 }, 3), { x: 3, y: 0 });
 });

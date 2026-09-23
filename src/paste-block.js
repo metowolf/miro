@@ -1,6 +1,6 @@
 /**
- * 大段粘贴折叠为占位块。Composer 是单行输入，任何换行都会丢失，
- * 因此超过阈值时只插入 `[Pasted text #N]`，原文存 registry，提交前再展开。
+ * 大段或多行粘贴折叠为占位块，避免一次输入撑高 Composer；只插入
+ * `[Pasted text #N]`，原文存 registry，提交前再展开。
  */
 
 import { stringWidth } from "./markdown-width.js";
@@ -110,6 +110,16 @@ export function pruneOrphanPastes(text, pastes) {
   const next = new Map();
   for (const [id, content] of registry) if (alive.has(id)) next.set(id, content);
   return next;
+}
+
+/** 在码点光标处插入文本，并返回更新后的字符与光标。 */
+export function insertTextAtCursor(chars, cursor, text) {
+  const at = Math.max(0, Math.min(chars.length, cursor));
+  const inserted = [...String(text ?? "")];
+  return {
+    chars: [...chars.slice(0, at), ...inserted, ...chars.slice(at)],
+    cursor: at + inserted.length,
+  };
 }
 
 /** 够大则折叠为标记，否则内联。 */

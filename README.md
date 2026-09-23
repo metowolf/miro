@@ -126,6 +126,7 @@ While a turn is running, ordinary prompts are queued in FIFO order. Slash comman
 | Key | Action |
 |-----|--------|
 | Enter | Send the prompt |
+| Shift+Enter | Insert a newline (Miro enables Kitty and xterm extended-key reporting; unsupported terminals still cannot distinguish it from Enter) |
 | `?` | Shortcut cheatsheet (empty composer) |
 | ↑ / ↓ | Input history or completion |
 | Ctrl+M | Select or switch model (needs a terminal that supports the kitty keyboard protocol, otherwise the key is the same as Enter) |

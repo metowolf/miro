@@ -224,6 +224,8 @@ miro 用到的上游写在 `~/.miro/models.json`。打开 `/model` 会重新读�
 
 Miro 支持 `SKILL.md` 约定（Agent Skills）。启动时从 `~/.miro/skills`、`<cwd>/.miro/skills`、`~/.agents/skills`、`<cwd>/.agents/skills` 扫描；额外目录写进 `~/.miro/settings.json` 顶层的 `skills` 数组，`"skills": false` 则整体关闭。含 `SKILL.md` 的目录就是一个 skill，不再向下扫描；裸 `*.md` 文件只有在 frontmatter 里带 `description` 时才算。同名时更靠后的根目录胜出（项目级覆盖用户级，显式路径最后），被遮住的文件会记在 client 的诊断里。
 
+Frontmatter 使用 YAML core 语法，顶层必须是映射，且 `description` 必须为非空字符串。看起来像数字或布尔值的文本请加引号。支持 Unicode 转义、块标量和有限的别名引用，不支持自定义标签或合并键展开。YAML 语法错误、重复键、过量别名展开或超过 64 KiB 的 frontmatter 都会使该 skill 被跳过并留下诊断。
+
 只有每个 skill 的 name / description / 文件路径会写进系统提示的 `<available_skills>`，正文由模型按需用 `read_file` 读取。`/skill:<name> [args]` 则把该 skill 的正文直接注入本轮消息，`-p` 运行同样可用：
 
 ```bash

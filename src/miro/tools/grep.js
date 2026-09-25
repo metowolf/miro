@@ -11,8 +11,9 @@ export const GREP_DEFINITION = {
   title: "Grep",
   description:
     "Search file contents for a pattern. Returns matching lines with file paths and line numbers. " +
-    "Skips version control directories, plus anything the project's .gitignore ignores " +
-    "(falling back to common dependency and build directories when there is no .gitignore). " +
+    "Directory searches skip version control directories and respect parent and nested .gitignore rules. " +
+    "Common dependency and build directories are also skipped unless explicitly unignored. " +
+    "An explicit file path bypasses ignore rules. " +
     `Output is truncated to ${GREP_DEFAULT_LIMIT} matches by default; ` +
     `long lines are truncated to ${GREP_MAX_LINE_LENGTH} chars.`,
   parameters: {
@@ -98,15 +99,17 @@ export function grepTool(cwd) {
     if (rootInfo.isFile()) {
       files = [{ display: nodePath.basename(searchRoot), absolute: searchRoot }];
     } else {
-      const ignoreFilter = await buildIgnoreFilter(searchRoot);
+      const ignoreFilter = await buildIgnoreFilter(searchRoot, { cwd });
       files = [];
       for await (const entry of glob(globPattern, {
         cwd: searchRoot,
         dot: false,
+        withFileTypes: true,
         exclude: ignoreFilter.isIgnoredEntry,
       })) {
-        if (ignoreFilter.isIgnoredPath(entry)) continue;
-        files.push({ display: entry, absolute: nodePath.join(searchRoot, entry) });
+        const absolute = nodePath.join(entry.parentPath ?? entry.path, entry.name);
+        if (ignoreFilter.isIgnoredPath(absolute, entry.isDirectory())) continue;
+        files.push({ display: nodePath.relative(searchRoot, absolute), absolute });
       }
       files.sort((a, b) => a.display.localeCompare(b.display));
     }

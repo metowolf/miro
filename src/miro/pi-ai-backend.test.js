@@ -739,3 +739,25 @@ test("context overflow is not retried and is flagged with contextOverflow", asyn
   assert.equal(captured.contextOverflow, true);
   assert.equal(captured.retryable, false);
 });
+
+test("token 限流保留重试分类，不误标为上下文超窗", async () => {
+  const requests = [];
+  const fetchImpl = fakeFetchSequence([{
+    status: 429,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ error: {
+      message: "Rate limit reached: too many tokens; retry later",
+      type: "rate_limit_error",
+    } }),
+  }], requests);
+  await assert.rejects(
+    collect(openAIResponsesBackend, fetchImpl, "https://responses.test/v1", { maxRetries: 0 }),
+    (error) => {
+      assert.match(error.message, /429.*too many tokens/);
+      assert.notEqual(error.retryable, false);
+      assert.notEqual(error.contextOverflow, true);
+      return true;
+    },
+  );
+  assert.equal(requests.length, 1);
+});

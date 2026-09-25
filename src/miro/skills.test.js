@@ -62,10 +62,10 @@ test("broken frontmatter (no closing delimiter) is treated as having no metadata
 
 test("folded scalar > becomes spaces, literal scalar | keeps newlines", () => {
   const folded = parseSkillFrontmatter("---\ndescription: >\n  one\n  two\n\n  three\n---\nbody\n");
-  assert.equal(folded.data.description, "one two\nthree");
+  assert.equal(folded.data.description, "one two\nthree\n");
 
   const literal = parseSkillFrontmatter("---\ndescription: |\n  one\n  two\n---\nbody\n");
-  assert.equal(literal.data.description, "one\ntwo");
+  assert.equal(literal.data.description, "one\ntwo\n");
 });
 
 test("scalars support quotes, comments and booleans", () => {
@@ -98,6 +98,81 @@ test("CRLF and BOM do not affect parsing", () => {
   assert.equal(parsed.present, true);
   assert.equal(parsed.data.name, "pdf");
   assert.equal(parsed.body, "Body.");
+});
+
+test("标准 YAML 支持 Unicode 转义、单引号转义和 flow mapping", () => {
+  const parsed = parseSkillFrontmatter(String.raw`---
+name: 'it''s-a-skill'
+description: "\u4F60\u597D\nworld"
+metadata: {owner: team, tags: [one, two]}
+---
+body`);
+  assert.equal(parsed.error, undefined);
+  assert.equal(parsed.data.name, "it's-a-skill");
+  assert.equal(parsed.data.description, "你好\nworld");
+  assert.deepEqual(parsed.data.metadata, { owner: "team", tags: ["one", "two"] });
+});
+
+test("块标量保留额外缩进、chomping 和缩进的分隔符", () => {
+  const folded = parseSkillFrontmatter("---\ndescription: >-\n  one\n    indented\n  two\n---\nbody");
+  assert.equal(folded.data.description, "one\n  indented\ntwo");
+  const literal = parseSkillFrontmatter("---\ndescription: |+\n  one\n  ---\n  ...\n\n...\nbody");
+  assert.equal(literal.data.description, "one\n---\n...\n\n");
+  assert.equal(literal.body, "body");
+});
+
+test("空 frontmatter 仍是缺少字段的元数据而非解析失败", () => {
+  for (const raw of ["", "# comment", "{}"]) {
+    const parsed = parseSkillFrontmatter(`---\n${raw}\n---\nbody`);
+    assert.equal(parsed.error, undefined);
+    assert.deepEqual(parsed.data, {});
+    assert.equal(parsed.present, true);
+  }
+});
+
+test("普通标量别名可用，但嵌套别名展开有上限", () => {
+  const parsed = parseSkillFrontmatter("---\nsummary: &summary Shared description\ndescription: *summary\n---\nbody");
+  assert.equal(parsed.data.description, "Shared description");
+  const refs = (name) => Array(10).fill(`*${name}`).join(", ");
+  const bomb = parseSkillFrontmatter(`---\na: &a [text]\nb: &b [${refs("a")}]\nc: &c [${refs("b")}]\ndescription: ok\n---\nbody`);
+  assert.match(bomb.error, /alias count/i);
+  assert.deepEqual(bomb.data, {});
+});
+
+test("非法语法、重复键、非 mapping 根节点和不支持的标签返回解析错误", () => {
+  for (const raw of [
+    'description: "unterminated',
+    "description: [unterminated",
+    "description: first\ndescription: second",
+    "name: pdf\nthis is not a mapping entry",
+    "[one, two]",
+    "scalar",
+    "null",
+    "description: !custom value",
+    "description: !!js/function function() {}",
+    "description: !!timestamp 2026-01-01",
+    "description: *missing",
+    "? [one, two]\n: value",
+  ]) {
+    const parsed = parseSkillFrontmatter(`---\n${raw}\n---\nbody`);
+    assert.ok(parsed.error, raw);
+    assert.equal(parsed.present, true);
+    assert.deepEqual(parsed.data, {});
+    assert.equal(parsed.body, "body");
+  }
+});
+
+test("YAML 的特殊键不能改写对象原型", () => {
+  const parsed = parseSkillFrontmatter("---\n__proto__: {description: injected}\nconstructor: value\n---\nbody");
+  assert.equal(parsed.error, undefined);
+  assert.equal(Object.getPrototypeOf(parsed.data), Object.prototype);
+  assert.equal(parsed.data.description, undefined);
+  assert.equal(Object.hasOwn(parsed.data, "__proto__"), true);
+});
+
+test("frontmatter 上限按 UTF-8 字节计算", () => {
+  const parsed = parseSkillFrontmatter(`---\ndescription: ${"你".repeat(MAX_FRONTMATTER_BYTES / 2)}\n---\nbody`);
+  assert.equal(parsed.tooLarge, true);
 });
 
 // ---------------------------------------------------------------------------
@@ -255,6 +330,38 @@ test("skill in an explicit path can override the default roots", () => {
   assert.equal(skills[0].source, "path");
 });
 
+test("扫描跳过无效 YAML 并记录诊断，不影响其他有效 skill", () => {
+  const { home, cwd } = sandbox();
+  writeTree(join(home, ".miro", "skills"), {
+    "broken/SKILL.md": "---\ndescription: one\ndescription: two\n---\nbody",
+    "invalid.md": "---\ndescription: !custom value\n---\nbody",
+    "valid/SKILL.md": "---\nname: valid\ndescription: >\n  one\n  two\n---\nbody",
+  });
+  const { skills, diagnostics } = loadSkills({ cwd, home });
+  assert.deepEqual(skills.map((skill) => [skill.name, skill.description]), [["valid", "one two"]]);
+  assert.equal(diagnostics.length, 2);
+  for (const diagnostic of diagnostics) {
+    assert.equal(diagnostic.code, "invalid-frontmatter");
+    assert.ok(diagnostic.path);
+    assert.match(diagnostic.message, /invalid YAML frontmatter/);
+  }
+});
+
+test("标准 YAML 类型仍受 Skill 字段校验约束", () => {
+  const { home, cwd } = sandbox();
+  writeTree(join(home, ".miro", "skills"), {
+    "numeric/SKILL.md": skillDoc("numeric", "123"),
+    "boolean/SKILL.md": skillDoc("boolean", "true"),
+    "mapping/SKILL.md": skillDoc("mapping", "{text: content}"),
+    "quoted/SKILL.md": skillDoc("quoted", '"123"', 'disable-model-invocation: "true"\n'),
+  });
+  const { skills, diagnostics } = loadSkills({ cwd, home });
+  assert.deepEqual(skills.map((skill) => skill.name), ["quoted"]);
+  assert.equal(skills[0].description, "123");
+  assert.equal(skills[0].disableModelInvocation, false);
+  assert.deepEqual(diagnostics.map((entry) => entry.code), Array(3).fill("missing-description"));
+});
+
 // ---------------------------------------------------------------------------
 // 注入与展开
 // ---------------------------------------------------------------------------
@@ -323,4 +430,19 @@ test("disable-model-invocation skills can still be pulled in via /skill:", () =>
   const { skills } = loadSkills({ cwd, home });
   assert.equal(formatSkillsForPrompt(skills), "");
   assert.ok(expandSkillCommand("/skill:internal", skills).includes("Body of internal."));
+});
+
+test("发现后元数据变坏或超限时不再展开 Skill", () => {
+  const { home, cwd } = sandbox();
+  const root = join(home, ".miro", "skills");
+  writeTree(root, { "pdf/SKILL.md": skillDoc("pdf", "Work with PDFs.") });
+  const { skills } = loadSkills({ cwd, home });
+  for (const text of [
+    '---\ndescription: "unterminated\n---\nbody',
+    `---\ndescription: ${"x".repeat(MAX_FRONTMATTER_BYTES + 1)}\n---\nbody`,
+    "# No frontmatter",
+  ]) {
+    writeTree(root, { "pdf/SKILL.md": text });
+    assert.equal(expandSkillCommand("/skill:pdf args", skills), null);
+  }
 });

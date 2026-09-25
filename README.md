@@ -224,6 +224,8 @@ Use `/config sandbox on` or `/config sandbox off` to update this setting and swi
 
 Miro supports the `SKILL.md` convention (Agent Skills). Skills are discovered at startup from `~/.miro/skills`, `<cwd>/.miro/skills`, `~/.agents/skills`, and `<cwd>/.agents/skills`. Extra directories go in a top-level `skills` array in `~/.miro/settings.json`; `"skills": false` turns the feature off. A directory containing `SKILL.md` is one skill and is not scanned any deeper, while a bare `*.md` file counts only when its frontmatter has a `description`. When two skills share a name, the later root wins (project over user, explicit paths last) and the shadowed file is reported in the client's diagnostics.
 
+Frontmatter uses YAML core syntax and must be a mapping with a non-empty string `description`. Quote values that look like numbers or booleans if you intend them as text. Unicode escapes, block scalars, and bounded aliases are supported; custom tags and merge-key expansion are not. Malformed YAML, duplicate keys, excessive alias expansion, or frontmatter exceeding 64 KiB cause the skill to be skipped with a diagnostic.
+
 Only each skill's name, description, and file path go into the system prompt, inside `<available_skills>`; the body is loaded on demand with `read_file`. `/skill:<name> [args]` injects that skill's body into the message instead, which works in `-p` runs too:
 
 ```bash

@@ -9,6 +9,7 @@
  * miro 的 contextWindow 来自用户可改的 models.json，32K 到 200K 都有，
  * 绝对预留在小窗口上一开场就触发、在大窗口上又压得太晚。
  */
+import { isContextOverflow } from "@earendil-works/pi-ai/utils/overflow";
 
 /** 高水位：占用达到可用额度的这个比例就压缩。 */
 export const COMPACTION_HIGH_WATER_RATIO = 0.8;
@@ -440,29 +441,15 @@ export function mergeChunkSummaries(summaries) {
     .join("\n\n");
 }
 
-/**
- * provider 报「上下文超窗」的特征串。
- *
- * 这条路径比主动阈值更重要：估算不准时阈值会失效，而 provider 的拒绝
- * 是确定信号。各家措辞不同，只能按子串匹配。
- */
-const OVERFLOW_PATTERNS = [
-  "context_length_exceeded",
-  "context length exceeded",
-  "maximum context length",
-  "exceeds the context window",
-  "exceed the context window",
-  "context window of this model",
-  "prompt is too long",
-  "prompt_too_long",
-  "too many tokens",
-  "reduce the length of the messages",
-  "input length and `max_tokens` exceed",
-];
-
-/** 判断一次失败是否是上下文超窗。 */
+/** 判断一次失败是否是上下文超窗；vendor 特征与限流排除交给 pi-ai。 */
 export function isContextOverflowError(error) {
   if (!error) return false;
-  const haystack = `${error.code ?? ""} ${error.message ?? error}`.toLowerCase();
-  return OVERFLOW_PATTERNS.some((pattern) => haystack.includes(pattern));
+  if (error.contextOverflow === true) return true;
+  // 只归一化兼容网关的旧格式，不绕过上游对限流文案的排除。
+  const errorMessage = [error.code, error.message ?? String(error)]
+    .filter(Boolean)
+    .join("\n")
+    .replace(/prompt_too_long/gi, "prompt is too long")
+    .replace(/input length and `max_tokens` exceed/gi, "exceeds the context window");
+  return isContextOverflow({ stopReason: "error", errorMessage });
 }

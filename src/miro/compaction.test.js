@@ -292,6 +292,32 @@ test("isContextOverflowError recognizes each vendor's context overflow wording",
   assert.equal(isContextOverflowError(null), false);
 });
 
+test("超窗识别复用 pi-ai 的 provider 分类并兼容网关格式", () => {
+  for (const message of [
+    "The input token count (200000) exceeds the maximum number of tokens allowed (100000)",
+    "prompt token count of 200000 exceeds the limit of 100000",
+    "Range of input length should be [1, 32768]",
+    "400 status code (no body)",
+    "prompt_too_long",
+    "input length and `max_tokens` exceed context limit",
+  ]) {
+    assert.equal(isContextOverflowError(new Error(message)), true, message);
+  }
+  assert.equal(isContextOverflowError({ contextOverflow: true, message: "provider overflow" }), true);
+});
+
+test("包含 token 超限措辞的限流与服务不可用不会触发压缩", () => {
+  for (const message of [
+    "Rate limit reached: too many tokens; retry later",
+    "Too many requests: token limit exceeded",
+    "Throttling error: Too many tokens, please wait before trying again.",
+    "Service unavailable: too many tokens",
+    "rate limit: prompt_too_long",
+  ]) {
+    assert.equal(isContextOverflowError(new Error(message)), false, message);
+  }
+});
+
 test("formatCompactionNotice carries the water mark and can be detected and dropped", () => {
   const notice = formatCompactionNotice({ before: 120_432, after: 14_210 });
   assert.match(notice, /Context compacted: 120k → 14k tokens/);

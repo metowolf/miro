@@ -17,10 +17,8 @@ import {
   COMMIT_PUSH_PR_RUBRIC,
   COMMIT_RUBRIC,
   detectForge,
-  DIFF_LIMIT,
   hasCommits,
   hasStagedChanges,
-  LOG_LIMIT,
   parseCommitArgs,
   parseRemoteHost,
   publishTarget,
@@ -273,7 +271,6 @@ test("diff truncation cuts on line boundaries and sets the flag", () => {
   assert.equal(noNewline.text.length, 50);
 
   assert.deepEqual(truncateDiff(null), { text: "", truncated: false });
-  assert.ok(DIFF_LIMIT > 0);
 });
 
 test("git context reads the four fields and returns null outside a repository", async () => {
@@ -293,7 +290,6 @@ test("context carries status, branch and recent commits when there are changes",
   assert.match(context.status, /a\.txt/);
   assert.match(context.diff, /\+two/);
   assert.match(context.log, /first commit/);
-  assert.ok(LOG_LIMIT > 0);
 });
 
 test("staged target reads only the diff from the index", async () => {

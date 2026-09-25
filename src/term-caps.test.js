@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isSynchronizedOutputSupported, shouldWrapSyncOutput } from "./term-caps.js";
+import { isSynchronizedOutputSupported } from "./term-caps.js";
 
 test("tmux always disables DEC 2026 even when the outer terminal is known to support it", () => {
   assert.equal(isSynchronizedOutputSupported({ TMUX: "", TERM_PROGRAM: "WezTerm" }), false);
@@ -47,10 +47,4 @@ test("older or invalid VTE versions and unknown terminals stay conservatively di
   assert.equal(isSynchronizedOutputSupported({ VTE_VERSION: "unknown" }), false);
   assert.equal(isSynchronizedOutputSupported({ TERM_PROGRAM: "xterm" }), false);
   assert.equal(isSynchronizedOutputSupported({}), false);
-});
-
-test("shouldWrapSyncOutput delegates directly to the capability probe", () => {
-  assert.equal(shouldWrapSyncOutput({ TERM_PROGRAM: "WezTerm" }), true);
-  assert.equal(shouldWrapSyncOutput({ TMUX: "tmux", TERM_PROGRAM: "WezTerm" }), false);
-  assert.equal(shouldWrapSyncOutput({ TERM_PROGRAM: "xterm" }), false);
 });

@@ -5,8 +5,6 @@ import { createGoalState } from "../goal.js";
 import {
   createToolRunners,
   isConcurrencySafeCall,
-  toolDefinition,
-  toolSchemas,
 } from "./index.js";
 import { setGoalBudgetTool, updateGoalTool } from "./update-goal.js";
 
@@ -111,8 +109,8 @@ test("set_goal_budget refuses an unreasonable time budget", async () => {
   assert.equal(goal.get().budget.wallClockBudgetMs, null);
 });
 
-test("goal tools are concurrency safe and need no approval", () => {
-  assert.equal(toolDefinition("update_goal").kind, "goal");
+// 并发安全意味着同批的多次目标更新一起执行；两者都是纯状态变更，没有副作用顺序。
+test("goal tools are concurrency safe so one batch can run them together", () => {
   assert.equal(isConcurrencySafeCall("update_goal", {}), true);
   assert.equal(isConcurrencySafeCall("set_goal_budget", {}), true);
 });
@@ -152,10 +150,4 @@ test("sub-agents never inherit the goal tools", async () => {
   assert.ok(!childTools.includes("set_goal_budget"));
   // 其它工具照旧继承，过滤不能把白名单整体清空。
   assert.ok(childTools.includes("read_file"));
-});
-
-test("both goal tools are advertised to the model", () => {
-  const names = toolSchemas().map((schema) => schema.function.name);
-  assert.ok(names.includes("update_goal"));
-  assert.ok(names.includes("set_goal_budget"));
 });

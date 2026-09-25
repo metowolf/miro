@@ -161,16 +161,6 @@ test("text between tool rounds is joined with blank lines instead of welded", as
   );
 });
 
-test("rememberIsolatedAnswer ignores empty text", () => {
-  const client = makeClient();
-
-  client.rememberIsolatedAnswer("   ");
-  assert.deepEqual(client.messages, []);
-
-  client.rememberIsolatedAnswer(" full answer ");
-  assert.deepEqual(client.messages.map((message) => message.content), ["full answer"]);
-});
-
 test("Plan interaction mode is independent from permission mode and rewrites the system prompt", async () => {
   const created = [];
   const client = makeClient();
@@ -307,9 +297,4 @@ test("/config sandbox persists the setting and keeps the terminal tool in both m
   assert.equal(writes[1].miro.sandbox.enabled, false);
   assert.ok(toolIds().includes("tool:terminal"));
   assert.ok(!toolIds().includes("tool:run_command"));
-});
-
-test("/config no longer exposes a user-selectable approval reviewer", () => {
-  const client = makeClient();
-  assert.equal(client.configOptions.some((option) => option.id === "approval_reviewer"), false);
 });

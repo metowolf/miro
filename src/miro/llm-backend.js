@@ -39,17 +39,6 @@ import {
 
 export { chatCompletionsBackend, piApiForProtocol, piProviderForProtocol };
 
-export const LLM_BACKEND_EVENT_TYPES = Object.freeze([
-  "connected",
-  "text",
-  "reasoning",
-  "reasoning_end",
-  "tool_calls",
-  "finish",
-  "usage",
-  "done",
-]);
-
 export const DEFAULT_LLM_REQUEST_TIMEOUT_MS = 20 * 60 * 1000;
 
 export class LlmRequestTimeoutError extends Error {

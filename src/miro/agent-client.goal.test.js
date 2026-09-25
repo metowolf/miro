@@ -208,7 +208,9 @@ test("resumeGoal continues the existing goal without resetting its accounting", 
   assert.equal(result.goal.status, "complete");
 });
 
-test("pauseGoal and cancelGoal both stop the loop", async () => {
+// 标题里的「停下」由 goalRunId 递增保证：续跑循环从 await prompt() 回来后发现版本
+// 变了就不再投递下一轮（见 cancel 的注释）。这里钉住两个公开入口都走了这条路。
+test("pauseGoal and cancelGoal invalidate the running continuation loop", async () => {
   const { client } = harness([{ stopReason: "end_turn" }]);
   client.goal.create({ objective: "x" });
 

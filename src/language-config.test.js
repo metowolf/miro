@@ -69,10 +69,9 @@ test("an invalid language falls back to the default bundle instead of throwing",
   assert.equal(reviewPrompts(undefined).REVIEW_RUBRIC, reviewPrompts("english").REVIEW_RUBRIC);
 });
 
-test("default exports stay the English originals so existing references do not change", () => {
-  assert.equal(INIT_PROMPT, initPromptFor("english"));
-  assert.equal(REVIEW_RUBRIC, reviewRubricFor("english"));
+test("the default /init and review exports are the English originals", () => {
   assert.match(INIT_PROMPT, /Please analyze this codebase/);
+  assert.match(REVIEW_RUBRIC, /\*\*Verdict:\*\* patch is correct/);
 });
 
 test("buildInitPrompt picks the base prompt by language and appends user instructions", () => {

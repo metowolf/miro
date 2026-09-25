@@ -4,10 +4,15 @@ import test from "node:test";
 import { permissionDecision, requiresAutoReview, runAgentLoop } from "./agent-loop.js";
 import { activeToolDefinitions, toolDefinition, toolSchemas } from "./tools/index.js";
 
+/** 取当前模式下命令工具的参数 schema。 */
+function commandParameters(sandboxEnabled) {
+  const schema = toolSchemas(sandboxEnabled).find((entry) => entry.function.name === "terminal");
+  return schema.function.parameters;
+}
+
 /** 取当前模式下命令工具的参数名集合。 */
 function commandParameterNames(sandboxEnabled) {
-  const schema = toolSchemas(sandboxEnabled).find((entry) => entry.function.name === "terminal");
-  return Object.keys(schema.function.parameters.properties);
+  return Object.keys(commandParameters(sandboxEnabled).properties);
 }
 
 test("the command tool is called terminal in both modes, and only its parameters differ", () => {
@@ -29,6 +34,9 @@ test("the command tool is called terminal in both modes, and only its parameters
     "allowedDomains",
     "sandbox",
   ]);
+  // 必填项两种模式一致：沙箱只是多出可选的网络与沙箱参数。
+  assert.deepEqual(commandParameters(false).required, ["command", "risk_level"]);
+  assert.deepEqual(commandParameters(true).required, ["command", "risk_level"]);
 });
 
 test("Auto review is limited to high-risk and sandbox-opt-out terminal calls", () => {

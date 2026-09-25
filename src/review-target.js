@@ -53,11 +53,7 @@ export function reviewEntries(state) {
  */
 export function findReviewTarget(state) {
   const { overlay, pendingToolGroup, blocks = [] } = state;
-  if (
-    overlay?.kind === "review-browser" ||
-    overlay?.kind === "tool-review" ||
-    overlay?.kind === "thought-review"
-  ) return { kind: "close" };
+  if (overlay?.kind === "review-browser") return { kind: "close" };
   if (overlay) return null;
 
   const entries = reviewEntries({ ...state, blocks, pendingToolGroup });

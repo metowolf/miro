@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  LLM_BACKEND_EVENT_TYPES,
   LlmRequestTimeoutError,
   assertLlmBackend,
   backendForProtocol,
@@ -18,17 +17,7 @@ async function drain(stream, requestOptions) {
   return events;
 }
 
-test("chatCompletionsBackend exposes the shared event contract and defaults to pi-ai Completions", () => {
-  assert.deepEqual(LLM_BACKEND_EVENT_TYPES, [
-    "connected",
-    "text",
-    "reasoning",
-    "reasoning_end",
-    "tool_calls",
-    "finish",
-    "usage",
-    "done",
-  ]);
+test("chatCompletionsBackend keeps the stream / estimateTokens contract and defaults to pi-ai Completions", () => {
   assert.equal(chatCompletionsBackend.id, "pi-ai:openai-completions");
   assert.equal(typeof chatCompletionsBackend.stream, "function");
   assert.equal(typeof chatCompletionsBackend.estimateTokens, "function");

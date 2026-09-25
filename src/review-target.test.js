@@ -23,8 +23,6 @@ function state(overrides = {}) {
 }
 
 test("an open review screen makes ctrl+o a close key", () => {
-  assert.deepEqual(findReviewTarget(state({ overlay: { kind: "tool-review" } })), { kind: "close" });
-  assert.deepEqual(findReviewTarget(state({ overlay: { kind: "thought-review" } })), { kind: "close" });
   assert.deepEqual(findReviewTarget(state({ overlay: { kind: "review-browser" } })), { kind: "close" });
 });
 
@@ -64,7 +62,12 @@ test("a running shell card is not reviewable yet", () => {
 
 test("an empty live thought falls through to history", () => {
   const current = state({ thought: { text: "  " }, blocks: [THOUGHT_BLOCK] });
-  assert.equal(findReviewTarget(current).kind, "review");
+  const target = findReviewTarget(current);
+  assert.equal(target.kind, "review");
+  // 空白活动 thought 不进条目：选中的仍是历史里那一条，也不宣称自己 live。
+  assert.deepEqual(target.entries.map((entry) => entry.kind), ["thought"]);
+  assert.equal(target.entries[target.index].thought, THOUGHT_BLOCK.thought);
+  assert.equal(target.live, false);
 });
 
 test("finalized shell cards stay browsable after they leave the activity area", () => {

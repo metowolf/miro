@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   configDisplayValue,
-  filterConfigOptions,
   matchConfigChoice,
   matchConfigOption,
   toggleConfigValue,
@@ -84,12 +83,6 @@ test("matchConfigChoice matches a catalog model by bare id", () => {
   assert.equal(matchConfigChoice(option, "openai-codex/gpt-5.6-sol").id, "gpt-5.6-sol");
   assert.equal(matchConfigChoice(option, "gpt-5.6-sol").value, "openai-codex/gpt-5.6-sol");
   assert.equal(matchConfigChoice(option, "GPT-5.6 Sol").value, "openai-codex/gpt-5.6-sol");
-});
-
-test("filterConfigOptions filters by name subsequence", () => {
-  const hits = filterConfigOptions(OPTIONS, "web");
-  assert.deepEqual(hits.map((item) => item.id), ["enable_web_search"]);
-  assert.equal(filterConfigOptions(OPTIONS, "").length, OPTIONS.length);
 });
 
 test("toggleConfigValue returns the other value only with exactly two choices", () => {

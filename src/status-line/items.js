@@ -394,11 +394,6 @@ export function resolveStatusLineItem(id) {
   return ALIAS_TO_ID.get(id.trim().toLowerCase()) ?? null;
 }
 
-/** 全量可用 id（含别名），用于文档与提示。 */
-export function statusLineItemIds() {
-  return ITEM_DEFINITIONS.map((item) => item.id);
-}
-
 /**
  * 把配置数组解析成 { items, invalid }。
  * items 为 canonical id 有序数组（已去重），invalid 保留用户原始写法。

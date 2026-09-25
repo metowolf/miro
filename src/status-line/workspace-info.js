@@ -34,11 +34,6 @@ export function projectNameFor(cwd) {
   return name;
 }
 
-/** 缓存中的分支名；未查询过返回 undefined，非仓库返回 null。 */
-export function cachedGitBranch(cwd) {
-  return branchCache.get(cwd);
-}
-
 /**
  * 异步查询 git 分支，同一 cwd 只允许一个 in-flight 请求。
  * 失败（非仓库、无 git）一律记为 null 且不抛错。
@@ -67,11 +62,4 @@ export function loadGitBranch(cwd) {
 
   inFlight.set(cwd, task);
   return task;
-}
-
-/** 测试用：清空缓存。 */
-export function resetWorkspaceInfoCache() {
-  projectNameCache.clear();
-  branchCache.clear();
-  inFlight.clear();
 }

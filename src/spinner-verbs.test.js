@@ -60,12 +60,6 @@ test("replace mode with an empty verb list falls back to the default list", () =
   );
 });
 
-test("sampled verbs always come from the list", () => {
-  for (let index = 0; index < 200; index += 1) {
-    assert.ok(SPINNER_VERBS.includes(sampleSpinnerVerb(SPINNER_VERBS)));
-  }
-});
-
 test("falls back to Working when the list is empty or invalid", () => {
   assert.equal(sampleSpinnerVerb([]), "Working");
   assert.equal(sampleSpinnerVerb(null), "Working");

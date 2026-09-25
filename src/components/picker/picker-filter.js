@@ -1,14 +1,10 @@
 /**
  * picker 的统一过滤、排序与高亮。
  *
- * 过滤语义为「大小写不敏感的子序列匹配」，与 acp/config-options.js 的
- * fuzzyMatch 保持一致；命中后额外按匹配质量排序——连续命中优于跳跃命中、
- * 前缀匹配优于文本中部匹配——使得输入 hy4 时 hy4-… 排在 hy3-…4 之前。
+ * 过滤语义为「大小写不敏感的子序列匹配」；命中后额外按匹配质量排序——
+ * 连续命中优于跳跃命中、前缀匹配优于文本中部匹配——使得输入 hy4 时
+ * hy4-… 排在 hy3-…4 之前。
  */
-
-import { fuzzyMatch } from "../../acp/config-options.js";
-
-export { fuzzyMatch };
 
 /**
  * 参与匹配的文本：主文案 + 右栏 + 分组 + 说明 + value。
@@ -23,7 +19,7 @@ export function searchableText(item) {
 
 /**
  * 子序列命中的字符下标，用于高亮。无匹配返回 null。
- * 采用贪心从左到右取最早命中位置，与 fuzzyMatch 的判定路径一致。
+ * 采用贪心从左到右取最早命中位置。
  */
 export function matchIndices(text, query) {
   const source = String(text ?? "");
@@ -47,7 +43,7 @@ export function matchIndices(text, query) {
 /**
  * 模糊匹配评分：数值越大表示匹配质量越高，不匹配返回 null。
  *
- * 与 fuzzyMatch 共享同一条贪心遍历路径，在判断是否匹配的同时收集评分信号：
+ * 与 matchIndices 共享同一条贪心遍历路径，在判断是否匹配的同时收集评分信号：
  * - 连续命中段越长越好（hy4 匹配 hy4-… 全连续，远胜 hy3-…4 跳跃命中）
  * - 首次命中越早越好（前缀匹配优于文本中部匹配）
  * - 命中字符之间的间隔（gap）越小越好（紧凑匹配优于分散匹配）

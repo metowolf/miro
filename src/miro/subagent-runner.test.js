@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   spawnAgentTool,
-  subagentTools,
 } from "./subagent-runner.js";
 
 /**
@@ -86,11 +85,4 @@ test("a missing message is rejected before the loop runs", async () => {
 
   assert.match(result.error, /missing required parameter 'message'/);
   assert.equal(calls.length, 0);
-});
-
-test("subagentTools strips recursion and parent-plan tools", () => {
-  assert.deepEqual(
-    subagentTools(["read_file", "spawn_agent", "update_tasks", "grep"]),
-    ["read_file", "grep"]
-  );
 });

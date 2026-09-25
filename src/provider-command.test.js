@@ -30,7 +30,10 @@ test("matching is case-sensitive per provider semantics", () => {
   assert.equal(matchProviderCommand("/Changelog", PROVIDER_COMMANDS), null);
 });
 
-test("local commands win: parseCommandInput matches a same-named command first, so the provider branch never runs", () => {
+// 优先级本身在 App 的按键分派里（本地命令先判、命中就不走 provider 分支），
+// 这里钉住它成立的前提：/model 同时命中两个解析器。缺了这条，分派顺序一点变化
+// 就会把本地命令发给 provider。
+test("a provider command named like a local one parses as both", () => {
   assert.deepEqual(parseCommandInput("/model"), { key: "model", args: "" });
   assert.equal(matchProviderCommand("/model", [{ name: "model" }]), "model");
 });

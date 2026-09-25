@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  TERMINAL_DEFINITION,
-  SANDBOX_TERMINAL_DEFINITION,
   hostTerminalTool,
   isReadOnlyCommand,
   normalizeAllowedDomains,
@@ -11,7 +9,6 @@ import {
   sandboxUnavailableReason,
   sandboxedTerminalTool,
   shutdownSandbox,
-  terminalDefinition,
 } from "./terminal.js";
 
 test("Plan terminal accepts environment inspection and safe read-only shell composition", () => {
@@ -60,21 +57,6 @@ test("terminal validates sandbox-specific inputs before starting a process", asy
   assert.match(domainsWithHostShell.error, /allowedDomains cannot be used/);
   const missing = await runner({ command: "echo hi", workdir: "/does-not-exist" });
   assert.match(missing.error, /workdir not found/);
-});
-
-test("both terminal modes share one name and differ only in the sandbox parameters", () => {
-  const host = terminalDefinition(false);
-  const sandboxed = terminalDefinition(true);
-  assert.equal(host, TERMINAL_DEFINITION);
-  assert.equal(sandboxed, SANDBOX_TERMINAL_DEFINITION);
-  assert.equal(host.name, "terminal");
-  assert.equal(sandboxed.name, "terminal");
-  assert.equal(host.kind, "execute");
-  assert.deepEqual(Object.keys(host.parameters.properties), ["command", "risk_level", "workdir", "timeout_ms"]);
-  assert.deepEqual(Object.keys(sandboxed.parameters.properties), [
-    "command", "risk_level", "workdir", "timeout_ms", "allowedDomains", "sandbox",
-  ]);
-  assert.deepEqual(host.parameters.required, ["command", "risk_level"]);
 });
 
 test("the host branch runs commands without a sandbox and reports the same output shape", async () => {

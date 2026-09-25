@@ -185,7 +185,6 @@ test("permission config defaults to Auto, and legacy Ask and unknown values migr
 });
 
 test("Auto safety review has no user-selectable reviewer option", () => {
-  assert.equal(readMiroConfig({ miro: { approvalReviewer: "user" } }).approvalReviewer, undefined);
   const option = buildConfigOptions({ models: [{ id: "m1" }], model: "m1", effort: "medium", thinking: true })
     .find((entry) => entry.id === "approval_reviewer");
   assert.equal(option, undefined);

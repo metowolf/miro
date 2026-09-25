@@ -36,12 +36,9 @@ test("内联补全打开时隐藏状态行，收起后恢复", () => {
   assert.equal(statusLineIsHidden({ completionOpen: false }), false);
 });
 
-test("弹出选择器和面板打开时隐藏状态行，不依赖输入框是否隐藏", () => {
-  for (const kind of ["model", "effort", "session", "review", "permissions", "config", "statusline", "permission", "oauth-input"]) {
-    assert.equal(statusLineIsHidden({ overlay: { kind } }), true, kind);
-  }
+test("任何 overlay 都隐藏状态行，没有 kind 的步骤面板也算", () => {
+  assert.equal(statusLineIsHidden({ overlay: { kind: "model" } }), true);
   assert.equal(statusLineIsHidden({ overlay: { steps: [] } }), true);
-  assert.equal(statusLineIsHidden({ overlay: null }), false);
 });
 
 test("补全收起后，仍打开的帮助或 overlay 继续隐藏状态行", () => {

@@ -1,18 +1,5 @@
 import { configChoices } from "./model.js";
 
-/** 大小写不敏感的子序列匹配。 */
-export function fuzzyMatch(text, query) {
-  const t = String(text ?? "").toLowerCase();
-  const q = String(query ?? "").toLowerCase();
-  let ti = 0;
-  for (const ch of q) {
-    ti = t.indexOf(ch, ti);
-    if (ti === -1) return false;
-    ti += 1;
-  }
-  return true;
-}
-
 export function listedConfigOptions(options) {
   if (!Array.isArray(options)) return [];
   return options.filter((option) => option?.id);
@@ -48,18 +35,6 @@ export function matchConfigChoice(option, query) {
     choices.find((choice) => choice.id != null && String(choice.id) === query) ??
     choices.find((choice) => choice.id != null && String(choice.id).toLowerCase() === lower) ??
     null
-  );
-}
-
-export function filterConfigOptions(options, query) {
-  const listed = listedConfigOptions(options);
-  const trimmed = String(query ?? "").trim();
-  if (!trimmed) return listed;
-  return listed.filter((option) =>
-    fuzzyMatch(
-      `${option.name ?? ""} ${option.id} ${option.category ?? ""} ${configDisplayValue(option)}`,
-      trimmed,
-    ),
   );
 }
 

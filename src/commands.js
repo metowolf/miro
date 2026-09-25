@@ -14,6 +14,7 @@ export const SLASH_COMMANDS = [
   { name: "new", aliases: [], description: "Start a fresh session (discard current in-memory transcript)" },
   { name: "sessions", aliases: [], description: "List saved sessions for this project" },
   { name: "clear", aliases: [], description: "Clear conversation context and start a fresh session" },
+  { name: "compact", aliases: [], description: "Summarize earlier context, keeping recent history (/compact [instructions])" },
   { name: "export", aliases: [], description: "Export the current conversation to a file or clipboard (/export [filename])" },
   { name: "review", aliases: [], description: "Review code changes and report prioritized findings (/review [instructions])" },
   { name: "goal", aliases: [], description: "Run a goal until it finishes (/goal <objective> | replace <objective> | status | pause | resume | cancel)" },

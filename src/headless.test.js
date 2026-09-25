@@ -300,3 +300,36 @@ test("provider.sessionMeta is passed to the ACP client constructor arguments", a
   assert.equal(code, 0);
   assert.deepEqual(FakeClient.instances[0].options.sessionMeta, { agentId: "agent-id" });
 });
+
+test("print compact uses the client operation and keeps progress off stdout", async () => {
+  const state = { messages: [{ role: "system", content: "summary", miro_compaction: true }], contextSent: true };
+  class CompactClient extends FakeClient {
+    async compact({ instructions }) {
+      this.instructions = instructions;
+      this.emit("compaction_state", true);
+      this.emit("context_checkpoint", state);
+      this.emit("compacted", { notice: "Context compacted" });
+      this.emit("compaction_state", false);
+      return { ok: true, stopReason: "end_turn" };
+    }
+  }
+  const out = capture();
+  const err = capture();
+  const records = [];
+  const deps = dependencies(out.stream, err.stream, records);
+  deps.MiroAgentClient = CompactClient;
+  const createRecorder = deps.createRecorder;
+  deps.createRecorder = (meta) => ({
+    ...createRecorder(meta),
+    recordContextState: (checkpoint) => records.push({ checkpoint }),
+  });
+  const code = await runHeadless({ prompt: "/compact keep decisions", continueSessionId: "resumed", outputFormat: "text" }, deps);
+  assert.equal(code, 0);
+  assert.equal(out.value(), "");
+  assert.match(err.value(), /Compacting context/);
+  assert.match(err.value(), /Context compacted/);
+  assert.equal(FakeClient.instances[0].instructions, "keep decisions");
+  assert.equal(FakeClient.instances[0].sentPrompt, undefined);
+  assert.equal(records.some((record) => record.block), false);
+  assert.deepEqual(records.find((record) => record.checkpoint).checkpoint, state);
+});

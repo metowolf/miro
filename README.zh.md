@@ -110,6 +110,7 @@ bun start -- -p "Analyze this project"
 | `/new` | 新建会话，不清除终端 |
 | `/sessions` | 列出当前项目已保存的会话 |
 | `/clear` | 新建会话并清除终端与可见记录 |
+| `/compact [text]` | 摘要较早的上下文并保留最近历史；可选文本用于指定摘要侧重点 |
 | `/export [file]` | 导出对话（剪贴板或 `.txt` 文件） |
 | `/help` | 显示帮助 |
 | `/exit` | 退出（`exit`、`/quit`、`quit`），并打印会话累计用量 |
@@ -134,7 +135,7 @@ ACP 声明的提供方专用斜杠命令会原样转发。
 | Ctrl+O | 打开整屏的 Review 窗口：实时与已保留的思考、shell 输出与工具详情 |
 | Ctrl+Q | 审阅、编辑、重排或删除排队消息 |
 | Ctrl+L | 清除终端显示（不结束 ACP 会话） |
-| Ctrl+C | 清空输入框；输入框为空时中断当前回合，2 秒内再按一次退出。任何正常退出方式（Ctrl+C、`/exit`、裸 `exit`/`quit`）都会打印同一行会话累计用量，形如 `Stat ↑12.4k ↓2.1k  R84.3k W6.2k CH81.9%  $0.018`：↑/↓ 是输入与输出的会话累计值，`R`/`W` 是缓存读/写（本会话出现过缓存读数后整段出现，没有读数的一侧补 0），`CH` 是缓存命中率（命中 /（未命中输入 + 命中 + 写入）），末段是会话累计成本（不足 1 时保留三位小数，不足 0.001 时保留四位；miro 累加每次主循环 LLM 请求，ACP 直接用 agent 上报的累计 `usage_update` 成本）；提供方从未上报过用量与成本时这一行整体不打印 |
+| Ctrl+C | 清空输入框；输入框为空时中断当前回合，2 秒内再按一次退出。任何正常退出方式（Ctrl+C、`/exit`、裸 `exit`/`quit`）都会打印同一行会话累计用量，形如 `Stat ↑12.4k ↓2.1k  R84.3k W6.2k CH81.9%  $0.018`：↑/↓ 是输入与输出的会话累计值，`R`/`W` 是缓存读/写（本会话出现过缓存读数后整段出现，没有读数的一侧补 0），`CH` 是缓存命中率（命中 /（未命中输入 + 命中 + 写入）），末段是会话累计成本（不足 1 时保留三位小数，不足 0.001 时保留四位；miro 累加主循环与压缩摘要请求，ACP 直接用 agent 上报的累计 `usage_update` 成本）；提供方从未上报过用量与成本时这一行整体不打印 |
 | Esc | 关闭快捷键帮助，或中断当前回合 |
 
 `@` 补全文件路径（优先 `git ls-files`，否则回退到文件系统）。多行粘贴会作为一次提交保留：编辑时折叠显示，发送后在会话记录中还原为原文。
@@ -145,7 +146,7 @@ ACP 声明的提供方专用斜杠命令会原样转发。
 
 思考内容使用三层披露方式。流式阶段若存在开头的 `**粗体标题**`，miro 会提取它并维持稳定的活动状态行；这一行还会带上计时，提供方上报过用量之后再加上 token 数，例如 `Thinking… (12s · ↑5 ↓2.9k)`：↑/↓ 是提供方最近一次读数里的输入与输出（miro 是每次 LLM 调用，ACP 是回合结束时 `PromptResponse` 的用量），不上报用量的提供方不会显示这一段。定稿后按持久化的 `thinkingDisplay` 设置呈现：`compact` 只保留标题与耗时摘要，`full` 额外打印 Markdown 正文，`hidden` 不进入可见 transcript。`/thinking` 打开选择器，`/thinking compact|full|hidden` 可直接切换。Ctrl+O 打开整屏的 Review 窗口，浏览实时思考、实时 shell 输出以及 transcript 里保留的思考与工具详情：列表里用 ↑/↓ 选中、Enter 进入详情，详情里用左右键切换到该列表的上一条 / 下一条。
 
-可见会话文件仍只保存思考元数据。原始 ACP 流量日志现在默认也会省略 `agent_thought_chunk`；只有确实需要这些敏感调试信息时，才应在 `~/.miro/settings.json` 中显式设置 `"recordRawThinking": true`。
+可见思考块只保存元数据；miro 的模型上下文检查点同样不保存原始 reasoning 与 thinking 块。原始 ACP 流量日志现在默认也会省略 `agent_thought_chunk`；只有确实需要这些敏感调试信息时，才应在 `~/.miro/settings.json` 中显式设置 `"recordRawThinking": true`。
 
 ## ACP 提供方
 
@@ -163,6 +164,8 @@ Miro 默认使用自带 agent。要进入 ACP，显式使用 `miro --acp <id>`�
 Miro 自带的 agent 不启动子进程、不走 ACP 协议，而是直接调用 LLM API，自己跑工具循环（`read_file`、`write_file`、`edit_file`、`terminal`、`grep`、`glob`、`spawn_agent`、`update_tasks`），并对外发出与 ACP client 相同的事件。它同时支持 OpenAI Chat Completions（默认）、OpenAI Responses 与 Anthropic Messages，无需安装任何二进制。长对话会自动压缩，压缩时 transcript 与模型都会看到一条 `Context compacted` 提示。
 
 以「产出报告」为目的的命令——`/review`、`/simplify`、`/commit`、`/commit-push-pr`、`/init`——跑在**独立上下文**里：命令的提示词（rubric、预读的 git 上下文、你的指令）以及模型为此读过的每个文件，都留在这次运行专用的历史里，只有一行命令记录（随回合开始即入会话）与最终结论并入会话。于是一次读了五十个文件的审查不再挤占对话上下文，而结论照样落在 transcript 上——之后说「把第 2 条修掉」仍有据可依。按 `Esc` 取消时，命令记录与已经流出的内容仍留在会话里，与 transcript 所见一致，恢复会话后看到的历史也相同。这条只在 miro 下成立：ACP 提供方的对话历史在它自己的进程里，miro 既无法隔离也无法修剪，那里这些命令照旧作为普通回合执行、留在对话中。
+
+空闲时使用 `/compact`，或用 `/compact 保留数据库迁移相关决策` 指定摘要侧重点。它使用当前模型，不清除可见聊天记录，并保存压缩后的模型上下文供恢复会话使用；关闭自动压缩也不影响手动命令。按 `Esc` 可取消而不替换历史，历史不足时只提示、不发摘要请求。有正在执行的 goal 时需先暂停。Print 模式也支持 `miro -c <session-id> -p "/compact"`，进度写入 stderr。ACP 下仅当提供方声明支持时才转发该命令。
 
 miro 用到的上游写在 `~/.miro/models.json`。打开 `/model` 会重新读取该文件，改完不必重启：
 
@@ -239,6 +242,8 @@ miro -p "/skill:pdf 提取 invoice.pdf 里的表格"
 
 ## 会话与上下文
 
+miro 会在可见聊天记录之外保存模型上下文检查点，包含压缩摘要及完整配对的工具调用与结果。恢复时优先使用最新合法检查点，不会重新回灌压缩前的可见记录；没有检查点的会话仍回退到可见消息。检查点包含对话和工具数据，请妥善保管会话文件。
+
 可见对话记录保存在 `~/.miro/sessions/<拍平后的 cwd>/<acp|miro>/<sessionId>.jsonl`，可通过 `/resume`、`--continue` 或 `--resume` 恢复。ACP 原始流量隔离在 `<拍平后的 cwd>/acp/raw/`，不会再与相同 session ID 的可恢复 transcript 冲突。项目目录名是把 cwd 里所有非字母数字字符折成 `-`（不掺哈希，保持可读）。除非显式开启 `recordRawThinking`，否则会省略原始思考 chunk。持久化失败不会导致程序退出；旧版 transcript 布局不再读取。可见会话的身份是运行方式 + session ID。`/resume`、`/sessions` 与 `--continue` 只显示当前启动模式的会话；要恢复 ACP transcript，须以该 transcript 的 `--acp <id>` 重启。空对话不留下任何东西：transcript 文件（连同它的运行方式目录）只在录到第一条 user/assistant 消息时才创建，零消息的 transcript 也不会被 `/resume`、`/sessions` 或 `--continue` 列出（ACP 原始流量日志不在此列，它仍在会话建立时开写）。
 
 启动时会加载 `~/.miro/AGENTS.md` 与 `./AGENTS.md`（跳过空白或不可读文件，相同文本去重），并在**第一次普通提示**时注入。恢复的会话跳过 AGENTS.md 的重复注入。若第一次请求失败，会恢复注入状态以便重试。
@@ -302,7 +307,7 @@ Plan 模式把调查与设计同实现分开。可通过 `/plan`、`/plan on` �
 
 存在目标时，同一行的右侧会常驻 `◎ /goal active (4s)`：目标状态加上它**实际推进**了多久（暂停期间与结束之后都不计入，与预算同一口径）。它不是可配置项，随目标出现与消失；ACP 提供方没有目标机制，那里永不出现。整条状态栏被配置成空数组时，它与状态栏一起隐藏。
 
-可用 id 包括 `model`、`model-with-reasoning`、`reasoning`、`mode`、`permission-mode`、`current-dir`、`project-name`、`hostname`、`git-branch`、`run-state`、`provider`、`session-id`、`session-title`、`miro-version`、`context-used`、`context-remaining`、`context-window-size`、`task-progress`、`goal`、`used-tokens`、`input-tokens`、`output-tokens`、`thought-tokens`、`session-cost`。上下文、token、费用与会话标题类项目需要提供方上报，否则省略。`used-tokens`、`input-tokens`、`output-tokens`、`thought-tokens`、`session-cost` 都是会话累计值：miro 累加主循环的每一次 LLM 请求（子智能体与压缩摘要不计入），ACP 直接采用 agent 上报的会话累计快照（成本则用 `usage_update` 的累计值）；因此它们可能大于活动槽思考行里的「最近一次读数」。`permission-mode` 在 miro 下显示 `AUTO` 或 `MANUAL`；无 miro 权限模式时隐藏。`goal` 显示当前目标的状态与进度，没有目标时隐藏——ACP 提供方没有目标机制，那里恒为隐藏。这些 id 也接受简写别名：`model-name`（`model`）、`permissions`（`permission-mode`）、`project` / `project-root`（`project-name`）、`status`（`run-state`）、`thread-id` / `thread-title`（`session-id`）、`version`（`miro-version`）、`context-usage`（`context-used`）、`goal-status`（`goal`）。
+可用 id 包括 `model`、`model-with-reasoning`、`reasoning`、`mode`、`permission-mode`、`current-dir`、`project-name`、`hostname`、`git-branch`、`run-state`、`provider`、`session-id`、`session-title`、`miro-version`、`context-used`、`context-remaining`、`context-window-size`、`task-progress`、`goal`、`used-tokens`、`input-tokens`、`output-tokens`、`thought-tokens`、`session-cost`。上下文、token、费用与会话标题类项目需要提供方上报，否则省略。`used-tokens`、`input-tokens`、`output-tokens`、`thought-tokens`、`session-cost` 都是会话累计值：miro 累加主循环的每一次 LLM 请求与压缩摘要请求（子智能体不计入），ACP 直接采用 agent 上报的会话累计快照（成本则用 `usage_update` 的累计值）；因此它们可能大于活动槽思考行里的「最近一次读数」。`permission-mode` 在 miro 下显示 `AUTO` 或 `MANUAL`；无 miro 权限模式时隐藏。`goal` 显示当前目标的状态与进度，没有目标时隐藏——ACP 提供方没有目标机制，那里恒为隐藏。这些 id 也接受简写别名：`model-name`（`model`）、`permissions`（`permission-mode`）、`project` / `project-root`（`project-name`）、`status`（`run-state`）、`thread-id` / `thread-title`（`session-id`）、`version`（`miro-version`）、`context-usage`（`context-used`）、`goal-status`（`goal`）。
 
 ## 许可证
 

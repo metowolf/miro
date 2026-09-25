@@ -296,7 +296,9 @@ async function runCompaction({
   signal,
   trigger,
   used,
+  instructions = "",
   onNotice,
+  onSummaryUsage = () => {},
   fetchImpl,
   requestTimeoutMs,
 }) {
@@ -329,8 +331,10 @@ async function runCompaction({
         baseUrl: config.baseUrl,
         apiKey: config.apiKey,
         model: config.model,
+        oauthProvider: config.oauthProvider ?? null,
+        oauthModels: config.oauthModels ?? null,
         // 摘要必须不带工具：给了 schema，模型会去调工具而不是写摘要。
-        messages: buildSummaryRequest({ toSummarize: chunk, previousSummary: split.previousSummary }),
+        messages: buildSummaryRequest({ toSummarize: chunk, previousSummary: split.previousSummary, instructions }),
         tools: [],
         // 关掉 thinking：摘要是转写任务，思考预算只会挤占正文额度。
         effort: null,
@@ -352,6 +356,7 @@ async function runCompaction({
       onChunk: () => {},
       onThought: () => {},
     });
+    if (result.usage) onSummaryUsage(result.usage);
     const validation = validateSummaryResult(result);
     if (!validation.ok) return { ok: false, reason: validation.reason };
     if (validation.schemaStatus === "soft_fallback") schemaStatus = "soft_fallback";
@@ -362,12 +367,13 @@ async function runCompaction({
   // 摘要为空就放弃：拿一句空话换掉真实历史是净损失，宁可让它继续超窗报错。
   if (summary.length === 0) return { ok: false, reason: "empty_summary" };
 
-  // 先在副本里做落位校验；摘要失败或压完仍超水位时，原历史必须一个字不动。
-  const candidate = [createSummaryMessage(summary), ...split.systemNotices, ...split.retained];
+  // 基础 system 留在最前面，摘要与环境提醒拥有独立身份。
+  const candidate = [...split.systemNotices, createSummaryMessage(summary), ...split.retained];
   dropCompactionNotices(candidate);
   const after = estimateMessagesTokens(candidate, estimate);
   const admission = validateCompactionAdmission({ before, after, highWater: plan.highWater });
   if (!admission.ok) return admission;
+  if (signal?.aborted) return { ok: false, reason: "cancelled" };
 
   const notice = formatCompactionNotice({ before, after });
   candidate.push({ role: "system", content: notice });
@@ -375,6 +381,36 @@ async function runCompaction({
   onNotice({ before, after, trigger: plan.reason, notice, schemaStatus });
   logUsageDebug("compaction", { before, after, trigger: plan.reason, schemaStatus });
   return { ok: true, reason: plan.reason, before, after, schemaStatus };
+}
+
+/** 手动、自动与超窗恢复共用的入口；不启动工具循环，也不产生助手正文。 */
+export async function compactContext({ messages, config, handlers = {}, signal = null, dependencies = {}, trigger = "manual", used = 0, instructions = "" }) {
+  const plan = planCompaction({ used, contextWindow: config.contextWindow, trigger, enabled: config.autoCompact !== false });
+  if (!plan.compact) return { ok: false, reason: plan.reason };
+  const backend = assertLlmBackend({ ...backendForProtocol(config.protocol), ...dependencies.backend });
+  const stream = withRequestTimeout(dependencies.backend != null ? backend.stream : dependencies.streamCompletion ?? backend.stream);
+  handlers.onCompactionState?.(true);
+  try {
+    return await runCompaction({
+      messages, config, stream, backend, signal, trigger, used, instructions,
+      fetchImpl: dependencies.fetchImpl,
+      requestTimeoutMs: dependencies.requestTimeoutMs ?? DEFAULT_LLM_REQUEST_TIMEOUT_MS,
+      onNotice: (info) => {
+        handlers.onUsage?.({ used: info.after, size: config.contextWindow });
+        handlers.onCompacted?.(info);
+      },
+      onSummaryUsage: (usage) => {
+        handlers.onTokenUsage?.({
+          ...usage,
+          cachedReadTokens: usage.cacheReadTokens ?? null,
+          cachedWriteTokens: usage.cacheWriteTokens ?? null,
+        });
+        if (usage.cost != null) handlers.onUsage?.({ cost: usage.cost });
+      },
+    });
+  } finally {
+    handlers.onCompactionState?.(false);
+  }
 }
 
 /**
@@ -526,27 +562,21 @@ export async function runAgentLoop({
   let truncatedContinuations = 0;
   // 最近一次观测到的上下文占用，压缩的主动判定依据。优先来自 provider
   // 回报的 usage，缺失时退回估算（与状态栏水位同一口径）。
-  let observedUsed = 0;
+  let observedUsed = estimateMessagesTokens(messages, backend.estimateTokens);
   // 溢出兜底只用一次：压完还溢出说明保留的尾部本身就装不下，再压一次
   // 也是同样的结果，继续循环只会把重试预算烧在必然失败的请求上。
   let overflowRecoveryUsed = false;
   const onCompacted = handlers.onCompacted ?? (() => {});
 
   const compactNow = (trigger, used) =>
-    runCompaction({
-      messages,
-      config,
-      stream,
-      backend,
-      signal,
-      trigger,
-      used,
-      fetchImpl: dependencies.fetchImpl,
-      requestTimeoutMs,
-      onNotice: (info) => {
-        // 压缩后水位归零重算：沿用旧的 observedUsed 会让下一轮立刻又判定超阈值。
-        observedUsed = info.after;
-        onCompacted(info);
+    compactContext({
+      messages, config, signal, trigger, used, dependencies,
+      handlers: {
+        ...handlers,
+        onCompacted: (info) => {
+          observedUsed = info.after;
+          onCompacted(info);
+        },
       },
     });
 
@@ -556,9 +586,15 @@ export async function runAgentLoop({
       break;
     }
 
+    // 这里只会看到完整的 assistant/tool 配对，保存后再压缩或发起下一次请求。
+    handlers.onContextCheckpoint?.();
     // 主动阈值：发请求之前先看水位。放在这里而不是收到 usage 之后，是因为
     // usage 描述的是刚发出去那次请求 —— 等看到它再压，超窗的请求已经发过了。
     await compactNow("automatic", observedUsed);
+    if (signal?.aborted) {
+      cancelled = true;
+      break;
+    }
 
     // 目标提醒描述的是「当前目标状态」，与只读/压缩提醒同属环境状态类：
     // 每轮重算并只保留一份，过期的那份必须真的消失，否则模型会同时读到
@@ -1027,8 +1063,8 @@ export async function runAgentLoop({
         throw error;
       }
       overflowRecoveryUsed = true;
-      // 手动触发：水位估算已经被证明是错的，不能再用它做判定。
-      const compacted = await compactNow("manual", Number.MAX_SAFE_INTEGER);
+      // 超窗恢复跳过水位，但不冒充手动命令绕过自动开关。
+      const compacted = await compactNow("overflow", Number.MAX_SAFE_INTEGER);
       if (!compacted.ok) throw error;
       round -= 1;
       continue;

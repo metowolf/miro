@@ -9,6 +9,7 @@ import {
   modelChoices,
 } from "./acp/model.js";
 import { isMiroProvider } from "./config.js";
+import { matchProviderCommand, parseCommandInput } from "./commands.js";
 import { MiroAgentClient } from "./miro/agent-client.js";
 import { AUTO_WARNING, MANUAL_WARNING, isAuto, isManual } from "./miro/permission-mode.js";
 import { detectProviders } from "./providers.js";
@@ -96,6 +97,7 @@ export async function runHeadless(options, dependencies = {}) {
   let assistantOutput = "";
   let stopReason = null;
   let signalCode = null;
+  let providerCommands = [];
   const permissionDenials = [];
   let resolveSignal;
   const signalled = new Promise((resolve) => { resolveSignal = resolve; });
@@ -144,6 +146,11 @@ export async function runHeadless(options, dependencies = {}) {
 
     client.on("chunk", (text) => { assistantOutput += String(text ?? ""); });
     client.on("stderr", (text) => writeLine(stderr, `${client.bin}: ${text}`));
+    client.on("commands", (commands) => { providerCommands = commands ?? []; });
+    client.on("context_checkpoint", (state) => recorder?.recordContextState?.(state));
+    client.on("compaction_state", (active) => {
+      if (active) writeLine(stderr, "Compacting context…");
+    });
     // 压缩对调用方必须可见：stdout 只承载结果，水位骤降写 stderr。
     client.on("compacted", (payload) => {
       if (typeof payload?.notice === "string" && payload.notice.length > 0) {
@@ -182,11 +189,21 @@ export async function runHeadless(options, dependencies = {}) {
     }
     recorder = createRecorder({ sessionId, providerId: provider.id, model: currentModelName(client.modelConfig) });
     recorder.recordPlanModeState?.(client.planModeSnapshot?.());
-    recorder.recordBlock({ role: "user", text: prompt });
+    const command = parseCommandInput(prompt.trim());
+    const compact = command?.key === "compact";
+    const localCompact = compact && typeof client.compact === "function";
+    if (compact && !localCompact && !matchProviderCommand(prompt.trim(), providerCommands)) {
+      throw new Error("This provider does not support /compact");
+    }
+    if (!localCompact) recorder.recordBlock({ role: "user", text: prompt });
     recorder.recordModel(currentModelName(client.modelConfig));
 
-    const promptResult = await Promise.race([client.prompt(prompt), signalled]);
+    const promptResult = await Promise.race([
+      localCompact ? client.compact({ instructions: command.args }) : client.prompt(prompt),
+      signalled,
+    ]);
     if (promptResult?.signal) return promptResult.signal;
+    if (localCompact && promptResult?.reason === "nothing_to_compact") writeLine(stderr, "Not enough history to compact.");
     stopReason = promptResult?.stopReason ?? null;
     const exitCode = stopReason === "end_turn" ? 0 : 1;
     if (assistantOutput) recorder.recordBlock({ role: "assistant", text: assistantOutput });

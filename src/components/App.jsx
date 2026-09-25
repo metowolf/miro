@@ -435,6 +435,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
   const connectionStage = useStore((state) => state.connectionStage);
   const busy = useStore((state) => state.busy);
   const cancelling = useStore((state) => state.cancelling);
+  const compacting = useStore((state) => state.compacting);
   const retryNotice = useStore((state) => state.retryNotice);
   const switching = useStore((state) => state.switching);
   const overlay = useStore((state) => state.overlay);
@@ -727,6 +728,12 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     client.on("usage", (payload) => useStore.getState().setUsage(payload));
     client.on("session_info", ({ title }) => useStore.getState().setSessionTitle(title));
     client.on("token_usage", (payload) => useStore.getState().setTokens(payload));
+    client.on("compaction_state", (active) => {
+      if (client === clientRef.current) useStore.getState().setCompacting(active);
+    });
+    client.on("context_checkpoint", (state) => {
+      if (client === clientRef.current) useStore.getState().recordContextState(state);
+    });
 
     // LLM 重试进度只落在状态行，不写进 transcript：重连是过程噪音，
     // 成功后不该在历史里留下痕迹。
@@ -2606,6 +2613,10 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
   // ACP 的对话历史在 provider 进程里，那里静默回退成普通回合。
   const sendPrompt = async (content, displayText, { raw = false, injectContext = !raw, isolated = false } = {}) => {
     const store = useStore.getState();
+    if (store.busy) {
+      store.push("system", "Please wait for the current operation to finish.");
+      return;
+    }
     if (store.status !== "ready") {
       store.push("system", "Not connected to an ACP provider. Restart with --acp <provider-id>.");
       return;
@@ -2642,6 +2653,38 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
         store.pushProposedPlan(transition.plan, transition.path);
         store.queueInput(approvedPlanPrompt(transition.plan), "Implement approved plan");
       }
+      drainQueue();
+    }
+  };
+
+  /** 不创建用户消息或普通模型回合；ACP 只转发其明确声明的 compact 命令。 */
+  const compactConversation = async (instructions, commandText) => {
+    const store = useStore.getState();
+    const client = clientRef.current;
+    if (store.overlay || store.switching) return;
+    if (store.status !== "ready" || !client) {
+      store.push("system", "Wait for the session to be ready before compacting context.");
+      return;
+    }
+    if (store.busy) {
+      store.push("system", "Wait for the current operation to finish, or press Esc before using /compact.");
+      return;
+    }
+    if (typeof client.compact !== "function") {
+      if (matchProviderCommand(commandText, store.providerCommands)) await sendPrompt(commandText, commandText, { raw: true });
+      else store.push("system", "This provider does not support /compact.");
+      return;
+    }
+    store.startTurn("compact");
+    let result;
+    try {
+      result = await client.compact({ instructions });
+      if (result.reason === "nothing_to_compact") store.push("system", "Not enough history to compact.");
+    } catch (error) {
+      if (useStore.getState().cancelling) result = { stopReason: "cancelled" };
+      else store.push("error", `Compaction failed: ${errorMessage(error)}`);
+    } finally {
+      store.endTurn(result);
       drainQueue();
     }
   };
@@ -2714,6 +2757,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
       resume: (args) => (args ? resumeById(args) : openSessionPicker()),
       new: startNewSession,
       sessions: listSessionsSummary,
+      compact: (args) => void compactConversation(args, text),
       export: (args) => (args ? exportToFile(args) : openExportDialog()),
       review: (args) => void (args ? reviewWithInstructions(args) : openReviewPicker()),
       goal: handleGoalCommand,
@@ -2840,6 +2884,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
         now={now}
         busy={busy}
         cancelling={cancelling}
+        compacting={compacting}
         turnStartedAt={turnStartedAt}
         toolRound={toolRound}
         hasBashActivity={Boolean(bashCard)}

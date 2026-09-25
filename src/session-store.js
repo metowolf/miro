@@ -146,6 +146,37 @@ function normalizeGoalState(state) {
   };
 }
 
+/** 模型检查点必须完整闭合工具调用；损坏记录不能毒化之后的每次请求。 */
+function validContextMessages(messages) {
+  if (!Array.isArray(messages)) return false;
+  const pending = new Set();
+  for (const message of messages) {
+    if (!isObject(message) || !["system", "user", "assistant", "tool"].includes(message.role)) return false;
+    if (typeof message.content !== "string" && !Array.isArray(message.content) && message.content !== null) return false;
+    if (message.role === "tool") {
+      if (!pending.delete(message.tool_call_id)) return false;
+    } else {
+      if (pending.size > 0) return false;
+      if (message.tool_calls != null) {
+        if (message.role !== "assistant" || !Array.isArray(message.tool_calls)) return false;
+        for (const call of message.tool_calls) {
+          if (typeof call?.id !== "string" || pending.has(call.id) || typeof call.function?.name !== "string" || typeof call.function?.arguments !== "string") return false;
+          pending.add(call.id);
+        }
+      }
+    }
+  }
+  return pending.size === 0;
+}
+
+/** 检查点保留可重放的对话和工具配对，但不扩大原始思考内容的落盘范围。 */
+function persistedContextMessage({ reasoning_content, thinking_blocks, ...message }) {
+  if (Array.isArray(message.content)) {
+    message.content = message.content.filter((block) => !["thinking", "redacted_thinking", "reasoning"].includes(block?.type));
+  }
+  return message;
+}
+
 /** 当前 block 记录的落盘版本；无 `v` 的记录是旧格式（全量字段）。 */
 const SESSION_BLOCK_VERSION = 2;
 
@@ -329,6 +360,9 @@ export class SessionRecorder {
     this.deferred = [];
     // 最近一条已经落盘的 ui_state 内容（不含时间戳），用于相邻去重。
     this.lastUiState = null;
+    this.lastContextMessages = [];
+    this.lastContextSent = null;
+    this.contextRevision = 0;
   }
 
   ensureMeta() {
@@ -405,6 +439,28 @@ export class SessionRecorder {
     );
   }
 
+  /**
+   * 模型历史与可见 transcript 分离。按消息序号写变化的后缀，避免每个工具轮次
+   * 重复落盘整段历史；新 recorder 从完整检查点开始，恢复时不依赖内存旧基线。
+   */
+  recordContextState(state) {
+    if (this.providerId !== "miro" || !this.opened() || typeof state?.contextSent !== "boolean" || !validContextMessages(state.messages)) return;
+    const messages = state.messages.map(persistedContextMessage);
+    const serialized = messages.map((message) => JSON.stringify(message));
+    let from = 0;
+    while (from < serialized.length && serialized[from] === this.lastContextMessages[from]) from += 1;
+    if (from === serialized.length && from === this.lastContextMessages.length && state.contextSent === this.lastContextSent) return;
+    const entry = {
+      type: "context_state", version: 1, at: Date.now(),
+      revision: this.contextRevision + 1, baseRevision: this.contextRevision,
+      from, messages: messages.slice(from), contextSent: state.contextSent,
+    };
+    if (!this.open() || !this.append(JSON.stringify(entry))) return;
+    this.lastContextMessages = serialized;
+    this.lastContextSent = state.contextSent;
+    this.contextRevision = entry.revision;
+  }
+
   /** 会话文件是否已经开写：本进程内已建出，或恢复的会话原本就存在。 */
   opened() {
     return this.metaWritten || this.established;
@@ -448,8 +504,9 @@ export class SessionRecorder {
     try {
       appendFileSync(this.file, `${line}\n`, "utf8");
       if (dedupeKey != null) this.lastUiState = dedupeKey;
+      return true;
     } catch {
-      // ignore
+      return false;
     }
   }
 }
@@ -473,6 +530,8 @@ function parseSessionFile(file) {
   let uiState = null;
   let goalState = null;
   let planModeState = null;
+  let contextState = null;
+  let contextRevision = 0;
   let content;
   try {
     if (statSync(file).size > MAX_SESSION_FILE_BYTES) return null;
@@ -508,11 +567,20 @@ function parseSessionFile(file) {
       const normalized = normalizePlanModeState(obj.state);
       if (normalized) planModeState = normalized;
     }
+    else if (obj.type === "context_state" && obj.version === 1) {
+      if (!Number.isSafeInteger(obj.from) || obj.from < 0 || !Number.isSafeInteger(obj.revision) ||
+          obj.revision !== obj.baseRevision + 1 || typeof obj.contextSent !== "boolean" || !Array.isArray(obj.messages)) continue;
+      if (obj.from !== 0 && (obj.baseRevision !== contextRevision || obj.from > (contextState?.messages.length ?? 0))) continue;
+      const messages = [...(contextState?.messages ?? []).slice(0, obj.from), ...obj.messages];
+      if (!validContextMessages(messages)) continue;
+      contextState = { messages, contextSent: obj.contextSent };
+      contextRevision = obj.revision;
+    }
   }
   if (!meta) return null;
   if (title != null) meta.title = title;
   if (model != null) meta.model = model;
-  return { meta, blocks, uiState, goalState, planModeState };
+  return { meta, blocks, uiState, goalState, planModeState, contextState };
 }
 
 function transcriptFiles(cwd) {
@@ -605,6 +673,7 @@ export function loadSessionBlocks(sessionId, cwd = process.cwd(), providerId = n
       uiState: parsed.uiState,
       goalState: parsed.goalState,
       planModeState: parsed.planModeState,
+      contextState: parsed.contextState,
     };
   }
   return null;

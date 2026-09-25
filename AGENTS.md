@@ -77,7 +77,7 @@ bun test ./test/paste-block.render.smoke.js
 - subagent 走自己的 loop（`miro/subagent-runner.js`），有独立历史与审批通道；`spawn_agent` 因可能弹窗而不参与流式执行。
 - 用量排查：`MIRO_DEBUG_USAGE=1` 会把用量链路的三层读数打到 stderr（`miro/usage-debug.js`）——`sse` 是网关原始分片、`backend` 是 pi-ai 归一化结果、`loop` 是上报给 store 的 payload。定位「cache write 一直是 0」这类问题时对齐三层即可看出是网关没上报还是中间层丢了。
 - 同一开关还会在每次模型请求前输出 `assembly`（system prompt + 工具 schema 的稳定指纹）、`context`（工具结果按工具归因的字节量），压缩成功时输出 `compaction`。这些诊断只含哈希、计数与字节量，不打印 prompt、工具正文或凭据。
-- miro 历史保存在 client 内；恢复会话时回灌可见 transcript，找不到可用历史才重建启动上下文。
+- miro 历史保存在 client 内；恢复时优先采用模型上下文检查点（压缩摘要、完整工具配对，不保存原始 thinking），旧会话回退到可见 transcript；找不到可用历史才重建启动上下文。`/compact` 复用自动压缩执行器，但独立于普通 prompt，空闲时执行且可取消。
 - 技能发现与 `/skill:<name>` 展开在 `src/miro/skills.js` 与 `agent-client.js`；ACP provider 自己管理技能。
 
 ## 权限与工具

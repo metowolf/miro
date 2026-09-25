@@ -14,7 +14,7 @@ function config() {
     protocol: "chat-completions",
     permissionMode: "auto",
     maxToolRounds: 2,
-    contextWindow: 1_000,
+    contextWindow: 1_100,
     autoCompact: true,
     tools: [],
   };
@@ -25,7 +25,7 @@ function history() {
     { role: "system", content: "system" },
     { role: "user", content: "a".repeat(600) },
     { role: "assistant", content: "prior answer" },
-    { role: "user", content: "b".repeat(200) },
+    { role: "user", content: "b".repeat(220) },
   ];
 }
 
@@ -57,7 +57,9 @@ test("overflow recovery validates and admits a summary before replacing history"
   assert.equal(result.stopReason, "end_turn");
   assert.equal(compacted.length, 1);
   assert.equal(compacted[0].schemaStatus, "soft_fallback");
-  assert.equal(messages[0].miro_compaction, true);
+  assert.equal(compacted[0].trigger, "overflow");
+  assert.equal(messages[0].content, "system");
+  assert.equal(messages[1].miro_compaction, true);
   assert.equal(messages.at(-1).content, "finished");
 });
 

@@ -473,3 +473,60 @@ test("an empty conversation produces no session storage and is backfilled once t
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("model checkpoints replay deltas and compaction without persisting raw thinking", () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "miro-session-context-"));
+  try {
+    const script = String.raw`
+      import assert from "node:assert/strict";
+      import { appendFileSync, existsSync, readFileSync } from "node:fs";
+      import { SessionRecorder, loadSessionBlocks } from "./src/session-store.js";
+      const options = { sessionId: "compact-session", providerId: "miro", cwd: "/work/example" };
+      const recorder = new SessionRecorder(options);
+      const messages = [
+        { role: "system", content: "base", miro_system: true },
+        { role: "user", content: "old question" },
+      ];
+      const save = () => recorder.recordContextState({ messages, contextSent: true });
+      const load = () => loadSessionBlocks(options.sessionId, options.cwd, "miro");
+      save();
+      assert.equal(existsSync(recorder.file), false);
+      recorder.recordBlock({ role: "user", text: "old question" });
+      save();
+      messages.push(
+        { role: "assistant", content: "reading", reasoning_content: "PRIVATE_REASONING",
+          thinking_blocks: [{ thinking: "PRIVATE_THINKING", thinkingSignature: "signature" }],
+          tool_calls: [{ id: "c1", type: "function", function: { name: "read_file", arguments: "{}" } }] },
+        { role: "tool", tool_call_id: "c1", content: "file contents" },
+      );
+      save();
+      save();
+      const entries = readFileSync(recorder.file, "utf8").trim().split("\n").map(JSON.parse).filter((x) => x.type === "context_state");
+      assert.deepEqual(entries.map((x) => x.from), [0, 2]);
+      assert.deepEqual(load().contextState.messages.at(-1), messages.at(-1));
+      assert.equal(load().contextState.messages[2].thinking_blocks, undefined);
+      assert.ok(messages[2].thinking_blocks);
+      assert.doesNotMatch(readFileSync(recorder.file, "utf8"), /PRIVATE_REASONING|PRIVATE_THINKING/);
+      const summary = { role: "system", miro_compaction: true, content: "Earlier decisions" };
+      messages.splice(1, 1, summary);
+      save();
+      const compacted = load().contextState;
+      assert.deepEqual(compacted.messages[1], summary);
+      assert.deepEqual(load().blocks, [{ role: "user", text: "old question" }]);
+      appendFileSync(recorder.file, JSON.stringify({ type: "context_state", version: 1, revision: 4,
+        baseRevision: 3, from: 1, messages: [{ role: "tool", tool_call_id: "orphan", content: "bad" }], contextSent: true }) + "\n");
+      assert.deepEqual(load().contextState, compacted);
+      const resumed = new SessionRecorder(options);
+      resumed.recordContextState(compacted);
+      assert.deepEqual(load().contextState, compacted);
+    `;
+    const result = spawnSync(process.execPath, ["-e", script], {
+      cwd: path.resolve(import.meta.dirname, ".."),
+      env: { ...process.env, HOME: home },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});

@@ -94,6 +94,7 @@ Commands:
   /new                Start a new session without clearing the terminal
   /sessions           List saved sessions for the current project
   /clear              Start a new session and clear the terminal and transcript
+  /compact [text]     Summarize earlier context; optional summary instructions
   /export [file]      Save the conversation to a text file; no file opens
                       export options (clipboard or file)
   /review [text]      Review code changes and report prioritized findings; no

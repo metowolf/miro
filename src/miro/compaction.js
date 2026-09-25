@@ -259,7 +259,7 @@ export function estimateMessagesTokens(messages, estimate) {
  * @param {object} input
  * @param {number} input.used 当前占用（优先用 provider 回报的真实值）
  * @param {number} input.contextWindow 模型上下文窗口
- * @param {"automatic"|"manual"} input.trigger
+ * @param {"automatic"|"manual"|"overflow"} input.trigger
  * @param {boolean} input.enabled
  * @returns {{ compact: boolean, reason: string, highWater: number, targetTokens: number, keepRecentTokens: number, reserveTokens: number }}
  */
@@ -280,10 +280,10 @@ export function planCompaction({
     reserveTokens: Math.floor(usable * COMPACTION_RESERVE_RATIO),
   };
 
-  if (!enabled) return { ...plan, reason: "disabled" };
+  if (!enabled && trigger !== "manual") return { ...plan, reason: "disabled" };
   if (usable === 0) return { ...plan, reason: "unknown_window" };
-  // 手动 /compact 不看水位：用户在长回合中间主动压缩是合法诉求。
-  if (trigger === "manual") return { ...plan, compact: true, reason: "manual" };
+  // 手动命令绕过自动开关；超窗恢复只绕过水位，仍尊重自动开关。
+  if (trigger === "manual" || trigger === "overflow") return { ...plan, compact: true, reason: trigger };
   if (used >= highWater) return { ...plan, compact: true, reason: "threshold" };
   return plan;
 }
@@ -392,10 +392,11 @@ export function splitForCompaction(messages, keepRecentTokens, estimate) {
  * 单独一次无工具的请求，而不是在主对话里插一句「请总结」：后者会污染
  * 历史，而且模型可能顺手接着干活。
  */
-export function buildSummaryRequest({ toSummarize, previousSummary = null }) {
+export function buildSummaryRequest({ toSummarize, previousSummary = null, instructions = "" }) {
   const body = [`<conversation>\n${conversationText(toSummarize)}\n</conversation>`];
   if (previousSummary) body.push(`<previous-summary>\n${previousSummary}\n</previous-summary>`);
   body.push(previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT);
+  if (instructions.trim()) body.push(`Additional summarization instructions:\n${instructions.trim()}`);
   return [
     { role: "system", content: SUMMARIZATION_SYSTEM_PROMPT },
     { role: "user", content: body.join("\n\n") },

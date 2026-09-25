@@ -298,3 +298,67 @@ test("/config sandbox persists the setting and keeps the terminal tool in both m
   assert.ok(toolIds().includes("tool:terminal"));
   assert.ok(!toolIds().includes("tool:run_command"));
 });
+
+test("manual compact preserves its summary across the next prompt, mode changes and resume", async () => {
+  const seen = [];
+  const client = makeClient({ seen, rounds: [
+    [{ type: "text", text: "Keep the migration decision" }, { type: "finish", reason: "stop" }],
+    ANSWER,
+  ] });
+  client.config.autoCompact = false;
+  client.ensureSystemPrompt();
+  client.messages.push(
+    { role: "user", content: "old context ".repeat(12000) },
+    { role: "assistant", content: "previous result" },
+    { role: "user", content: "recent context ".repeat(10000) },
+  );
+  const states = [];
+  let checkpoint;
+  client.on("compaction_state", (active) => states.push(active));
+  client.on("context_checkpoint", (state) => { checkpoint = structuredClone(state); });
+  const result = await client.compact({ instructions: "Preserve migration details" });
+  assert.equal(result.ok, true);
+  assert.ok(result.after < result.before);
+  assert.deepEqual(states, [true, false]);
+  assert.match(seen[0][1].content, /Preserve migration details/);
+  assert.ok(!client.messages.some((message) => message.content?.includes("Preserve migration details")));
+  const summary = client.messages.find((message) => message.miro_compaction);
+  assert.ok(summary);
+  client.interactionMode = "plan";
+  client.planPath = "/tmp/plan.md";
+  client.ensureSystemPrompt();
+  assert.equal(client.messages.find((message) => message.miro_compaction), summary);
+  await client.prompt("continue");
+  assert.ok(seen.at(-1).some((message) => message.content === summary.content));
+  const resumed = makeClient();
+  resumed.dependencies.loadSessionBlocks = () => ({
+    contextState: checkpoint,
+    blocks: [{ role: "user", text: "old visible transcript must not be replayed" }],
+  });
+  assert.equal(resumed.hydrateMessages(), true);
+  assert.ok(resumed.messages.some((message) => message.content === summary.content));
+  assert.ok(!resumed.messages.some((message) => message.content?.includes("must not be replayed")));
+  assert.equal(resumed.messages.filter((message) => message.miro_system).length, 1);
+});
+
+test("manual compact is exclusive and cancellation leaves history unchanged", async () => {
+  const client = makeClient();
+  client.messages = [
+    { role: "user", content: "old context ".repeat(12000) },
+    { role: "assistant", content: "answer" },
+    { role: "user", content: "recent context ".repeat(10000) },
+  ];
+  const original = structuredClone(client.messages);
+  client.dependencies.streamCompletion = async function* ({ signal }) {
+    await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+    yield { type: "text", text: "must not be committed" };
+  };
+  const running = client.compact();
+  await assert.rejects(client.prompt("concurrent"), /current operation/);
+  await assert.rejects(client.promptIsolated("concurrent"), /current operation/);
+  await assert.rejects(client.compact(), /current operation/);
+  client.cancel();
+  assert.equal((await running).stopReason, "cancelled");
+  assert.deepEqual(client.messages, original);
+  assert.equal(client.abortController, null);
+});

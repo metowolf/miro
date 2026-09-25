@@ -14,7 +14,8 @@ import { loadSessionBlocks } from "../session-store.js";
 import { readSystemSettings, writeSystemSettings } from "../settings-file.js";
 import { normalizeDisabledTools, saveDisabledTools } from "../settings.js";
 import { errorMessage } from "../utils.js";
-import { SYSTEM_PROMPT, environmentPrompt, runAgentLoop } from "./agent-loop.js";
+import { SYSTEM_PROMPT, compactContext, environmentPrompt, runAgentLoop } from "./agent-loop.js";
+import { isSummaryMessage } from "./compaction.js";
 import {
   GOAL_CONTINUATION_PROMPT,
   GOAL_ROUND_CAP_CONTINUATION_PROMPT,
@@ -230,11 +231,12 @@ export class MiroAgentClient extends EventEmitter {
   ensureSystemPrompt() {
     if (!SYSTEM_PROMPT) return;
     const content = this.systemPrompt();
-    if (this.messages[0]?.role === "system") {
-      this.messages[0] = { ...this.messages[0], content };
-      return;
-    }
-    this.messages.unshift({ role: "system", content });
+    // 摘要也使用 system role，必须按身份找基础提示，不能覆盖首条 system。
+    const index = this.messages.findIndex((message) => message?.role === "system" &&
+      !isSummaryMessage(message) && (message.miro_system === true ||
+        (typeof message.content === "string" && message.content.startsWith(SYSTEM_PROMPT))));
+    if (index >= 0) this.messages.splice(index, 1);
+    this.messages.unshift({ role: "system", content, miro_system: true });
   }
 
   /**
@@ -257,9 +259,8 @@ export class MiroAgentClient extends EventEmitter {
   }
 
   /**
-   * ACP provider 靠 `session/load` 拿回历史，miro 没有远端会话，
-   * 只能从落盘的可见 transcript 还原 user / assistant 轮次。
-   * 工具调用与思考不还原：它们的 tool_call_id 已经无从对应。
+   * 优先恢复模型上下文检查点（摘要、工具调用及对应结果），旧会话仍回退到
+   * 可见 transcript。可见 block 与模型消息不是一一对应，不能混着重放。
    */
   hydrateMessages() {
     const load = this.dependencies.loadSessionBlocks ?? loadSessionBlocks;
@@ -280,6 +281,12 @@ export class MiroAgentClient extends EventEmitter {
       this.planPath = restoredPlan.planPath;
       this.modes = this.modesPayload();
       this.ensureSystemPrompt();
+    }
+    if (saved?.contextState?.messages?.length > 0) {
+      this.messages = structuredClone(saved.contextState.messages);
+      this.contextSent = saved.contextState.contextSent;
+      this.ensureSystemPrompt();
+      return true;
     }
     for (const block of saved?.blocks ?? []) {
       if (block?.role !== "user" && block?.role !== "assistant" && block?.role !== "proposedPlan") continue;
@@ -308,6 +315,7 @@ export class MiroAgentClient extends EventEmitter {
    * 注入失败要还原标记，恢复的会话不再注入。
    */
   async prompt(content, { injectContext = true } = {}) {
+    this.assertIdle();
     const blocks = typeof content === "string" ? [{ type: "text", text: content }] : content;
     const inject = injectContext && !this.contextSent;
     if (inject) this.contextSent = true;
@@ -340,6 +348,47 @@ export class MiroAgentClient extends EventEmitter {
       if (inject) this.contextSent = false;
       // cancel() / close() 中断请求时抛出的 AbortError 属于正常结局。
       if (this.closed || controller.signal.aborted) return { stopReason: "cancelled" };
+      throw error;
+    } finally {
+      this.checkpointContext();
+      if (this.abortController === controller) this.abortController = null;
+    }
+  }
+
+  /** 回合互斥由 client 保底，避免 UI 或脚本同时改写同一段历史。 */
+  assertIdle() {
+    if (this.closed) throw new Error("Session is closed");
+    if (this.abortController) throw new Error("Wait for the current operation to finish before starting another one");
+  }
+
+  checkpointContext() {
+    this.emit("context_checkpoint", { messages: this.messages, contextSent: this.contextSent });
+  }
+
+  /** /compact 是独立操作，不把命令当用户消息，也不自动续跑旧任务。 */
+  async compact({ instructions = "" } = {}) {
+    this.assertIdle();
+    if (["pending", "active", "pausing"].includes(this.goalSnapshot()?.status)) {
+      throw new Error("Pause the active goal before compacting context");
+    }
+    const controller = new AbortController();
+    this.abortController = controller;
+    try {
+      const result = await compactContext({
+        messages: this.messages,
+        config: this.loopConfig(),
+        handlers: this.loopHandlers(),
+        signal: controller.signal,
+        dependencies: this.loopDependencies(),
+        instructions,
+      });
+      if (controller.signal.aborted) return { ok: false, reason: "cancelled", stopReason: "cancelled" };
+      if (!result.ok && result.reason !== "nothing_to_compact") {
+        throw new Error(`Context was not changed: ${result.reason}`);
+      }
+      return { ...result, stopReason: "end_turn" };
+    } catch (error) {
+      if (controller.signal.aborted) return { ok: false, reason: "cancelled", stopReason: "cancelled" };
       throw error;
     } finally {
       if (this.abortController === controller) this.abortController = null;
@@ -642,7 +691,12 @@ export class MiroAgentClient extends EventEmitter {
       onUsage: (payload) => this.emit("usage", payload),
       onTokenUsage: (payload) => this.emit("token_usage", payload),
       onRetry: (payload) => this.emit("retry", payload),
-      onCompacted: (payload) => this.emit("compacted", payload),
+      onCompactionState: (active) => this.emit("compaction_state", active),
+      onContextCheckpoint: () => this.checkpointContext(),
+      onCompacted: (payload) => {
+        this.checkpointContext();
+        this.emit("compacted", payload);
+      },
       onPlan: (entries) => this.emit("plan", entries),
       requestPermission: (params) => this.onPermissionRequest(params),
       requestPlanEntry: async () => {
@@ -701,6 +755,7 @@ export class MiroAgentClient extends EventEmitter {
    * 隔离也不能事后修剪。
    */
   async promptIsolated(content, { displayText = null, injectContext = false } = {}) {
+    this.assertIdle();
     const blocks = typeof content === "string" ? [{ type: "text", text: content }] : content;
     // AGENTS.md 上下文按需进隔离历史而不是主历史：项目约定是 review / commit
     // 的判断依据，但它属于这次任务的输入，任务结束后没有再留在对话里的理由。
@@ -731,6 +786,9 @@ export class MiroAgentClient extends EventEmitter {
         messages,
         config: this.loopConfig(),
         handlers: this.loopHandlers({
+          // 隔离历史不能写成主会话检查点；只在结论并回后保存主历史。
+          onContextCheckpoint: () => {},
+          onCompacted: (payload) => this.emit("compacted", payload),
           onChunk: (delta) => {
             if (typeof delta === "string") segment += delta;
             this.emit("chunk", delta, this.sessionId);
@@ -758,6 +816,7 @@ export class MiroAgentClient extends EventEmitter {
       // 半截正文两侧都不保留。
       throw error;
     } finally {
+      this.checkpointContext();
       if (this.abortController === controller) this.abortController = null;
     }
   }

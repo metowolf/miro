@@ -32,6 +32,7 @@ export function StatusVerb({
   now,
   busy,
   cancelling,
+  compacting = false,
   turnStartedAt,
   toolRound = 0,
   hasBashActivity = false,
@@ -80,7 +81,7 @@ export function StatusVerb({
   return (
     <Box marginTop={1}>
       <Box width={2} flexShrink={0}><Text color="cyan">{spinner}</Text></Box>
-      <Text color="cyan">{verb}… <Text dimColor>({timing}esc to interrupt)</Text></Text>
+      <Text color="cyan">{compacting ? "Compacting context" : verb}… <Text dimColor>({timing}esc to interrupt)</Text></Text>
     </Box>
   );
 }

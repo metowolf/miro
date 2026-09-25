@@ -1,5 +1,8 @@
+import { parsePatch, structuredPatch } from "diff";
+
 const DIFF_CONTEXT_LINES = 3;
-const MAX_MYERS_DISTANCE = 1_000;
+const MAX_EDIT_LENGTH = 1_000;
+const DIFF_TIMEOUT_MS = 100;
 
 function own(object, key) {
   return object != null && Object.prototype.hasOwnProperty.call(object, key);
@@ -31,150 +34,61 @@ function operationFor(oldText, newText, { oldMissing = false } = {}) {
   return "update";
 }
 
-function get(map, key) {
-  return map.has(key) ? map.get(key) : Number.NEGATIVE_INFINITY;
+/** jsdiff 的空区间使用下一行；展示层保留 unified patch 的前一行坐标。 */
+function displayHunks(hunks) {
+  return hunks.map(({ oldStart, oldLines, newStart, newLines, lines }) => ({
+    oldStart: oldLines === 0 ? Math.max(0, oldStart - 1) : oldStart,
+    oldLines,
+    newStart: newLines === 0 ? Math.max(0, newStart - 1) : newStart,
+    newLines,
+    lines: lines.filter((line) => !line.startsWith("\\")),
+  }));
 }
 
-/** Myers 行级 diff；极端大改动退化为整段删除/新增，避免无界内存占用。 */
-function diffLineOperations(oldLines, newLines) {
-  const oldLength = oldLines.length;
-  const newLength = newLines.length;
-  let frontier = new Map([[1, 0]]);
-  const trace = [];
-  const limit = Math.min(oldLength + newLength, MAX_MYERS_DISTANCE);
-
-  for (let distance = 0; distance <= limit; distance += 1) {
-    const current = new Map();
-    for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
-      let x;
-      if (
-        diagonal === -distance ||
-        (diagonal !== distance && get(frontier, diagonal - 1) < get(frontier, diagonal + 1))
-      ) {
-        x = get(frontier, diagonal + 1);
-      } else {
-        x = get(frontier, diagonal - 1) + 1;
-      }
-      if (!Number.isFinite(x)) x = 0;
-      let y = x - diagonal;
-      while (x < oldLength && y < newLength && oldLines[x] === newLines[y]) {
-        x += 1;
-        y += 1;
-      }
-      current.set(diagonal, x);
-      if (x >= oldLength && y >= newLength) {
-        trace.push(current);
-        return backtrackOperations(trace, oldLines, newLines);
-      }
+function countChanges(hunks) {
+  let additions = 0;
+  let deletions = 0;
+  for (const hunk of hunks) {
+    for (const line of hunk.lines) {
+      if (line.startsWith("+")) additions += 1;
+      if (line.startsWith("-")) deletions += 1;
     }
-    trace.push(current);
-    frontier = current;
   }
-
-  return [
-    ...oldLines.map((text) => ({ type: "remove", text })),
-    ...newLines.map((text) => ({ type: "add", text })),
-  ];
+  return { additions, deletions };
 }
 
-function backtrackOperations(trace, oldLines, newLines) {
-  let x = oldLines.length;
-  let y = newLines.length;
-  const reversed = [];
-
-  for (let distance = trace.length - 1; distance > 0; distance -= 1) {
-    const previous = trace[distance - 1];
-    const diagonal = x - y;
-    const previousDiagonal =
-      diagonal === -distance ||
-      (diagonal !== distance && get(previous, diagonal - 1) < get(previous, diagonal + 1))
-        ? diagonal + 1
-        : diagonal - 1;
-    const previousX = get(previous, previousDiagonal);
-    const previousY = previousX - previousDiagonal;
-
-    while (x > previousX && y > previousY) {
-      reversed.push({ type: "context", text: oldLines[x - 1] });
-      x -= 1;
-      y -= 1;
-    }
-    if (x === previousX) {
-      reversed.push({ type: "add", text: newLines[y - 1] });
-      y -= 1;
-    } else {
-      reversed.push({ type: "remove", text: oldLines[x - 1] });
-      x -= 1;
-    }
-  }
-
-  while (x > 0 && y > 0) {
-    reversed.push({ type: "context", text: oldLines[x - 1] });
-    x -= 1;
-    y -= 1;
-  }
-  while (x > 0) {
-    reversed.push({ type: "remove", text: oldLines[--x] });
-  }
-  while (y > 0) {
-    reversed.push({ type: "add", text: newLines[--y] });
-  }
-  return reversed.reverse();
-}
-
-function hunksFromOperations(operations) {
-  const annotated = [];
-  const changes = [];
-  let oldLine = 1;
-  let newLine = 1;
-
-  for (const operation of operations) {
-    const item = { ...operation, oldLine, newLine };
-    annotated.push(item);
-    if (operation.type !== "context") changes.push(annotated.length - 1);
-    if (operation.type !== "add") oldLine += 1;
-    if (operation.type !== "remove") newLine += 1;
-  }
-  if (changes.length === 0) return [];
-
-  const ranges = [];
-  for (const index of changes) {
-    const start = Math.max(0, index - DIFF_CONTEXT_LINES);
-    const end = Math.min(annotated.length, index + DIFF_CONTEXT_LINES + 1);
-    const last = ranges.at(-1);
-    if (last && start <= last.end) last.end = Math.max(last.end, end);
-    else ranges.push({ start, end });
-  }
-
-  return ranges.map(({ start, end }) => {
-    const selected = annotated.slice(start, end);
-    const oldLines = selected.filter((line) => line.type !== "add").length;
-    const newLines = selected.filter((line) => line.type !== "remove").length;
-    const first = selected[0];
-    return {
-      oldStart: oldLines === 0 ? Math.max(0, first.oldLine - 1) : first.oldLine,
-      oldLines,
-      newStart: newLines === 0 ? Math.max(0, first.newLine - 1) : first.newLine,
-      newLines,
-      lines: selected.map((line) => {
-        const prefix = line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
-        return `${prefix}${line.text}`;
-      }),
-    };
+function textHunks(oldText, newText) {
+  const oldLines = splitLines(oldText);
+  const newLines = splitLines(newText);
+  // 预览只比较行内容，沿用忽略末尾换行差异的行为；原始正文仍保留在结果中。
+  const terminated = (lines) => lines.length ? `${lines.join("\n")}\n` : "";
+  const patch = structuredPatch("", "", terminated(oldLines), terminated(newLines), "", "", {
+    context: DIFF_CONTEXT_LINES,
+    maxEditLength: MAX_EDIT_LENGTH,
+    timeout: DIFF_TIMEOUT_MS,
   });
+  if (patch) return displayHunks(patch.hunks);
+  // 超出计算预算时仍给出完整预览，不继续做无界搜索。
+  return [{
+    oldStart: oldLines.length ? 1 : 0,
+    oldLines: oldLines.length,
+    newStart: newLines.length ? 1 : 0,
+    newLines: newLines.length,
+    lines: [...oldLines.map((line) => `-${line}`), ...newLines.map((line) => `+${line}`)],
+  }];
 }
 
 function fromTexts({ path, oldText, newText, source, complete, oldMissing = false }) {
   if (typeof newText !== "string" || (!oldMissing && typeof oldText !== "string")) return null;
   const normalizedOld = normalizedText(oldMissing ? "" : oldText);
   const normalizedNew = normalizedText(newText);
-  const operations = diffLineOperations(splitLines(normalizedOld), splitLines(normalizedNew));
+  const hunks = textHunks(normalizedOld, normalizedNew);
   return {
     path: typeof path === "string" && path.length > 0 ? path : null,
     oldText: oldMissing ? null : normalizedOld,
     newText: normalizedNew,
-    hunks: hunksFromOperations(operations),
-    additions: operations.filter((line) => line.type === "add").length,
-    deletions: operations.filter((line) => line.type === "remove").length,
+    hunks,
+    ...countChanges(hunks),
     operation: operationFor(normalizedOld, normalizedNew, { oldMissing }),
     source,
     complete,
@@ -202,71 +116,37 @@ function contentDiff(content) {
 }
 
 function cleanPatchPath(value) {
-  if (typeof value !== "string") return null;
-  const token = value.trim().split(/\s+/)[0];
-  if (!token || token === "/dev/null") return null;
-  return token.startsWith("a/") || token.startsWith("b/") ? token.slice(2) : token;
+  if (typeof value !== "string" || !value || value === "/dev/null") return null;
+  return value.startsWith("a/") || value.startsWith("b/") ? value.slice(2) : value;
 }
 
 function parseUnifiedPatch(patch, fallbackPath) {
   if (typeof patch !== "string" || patch.trim().length === 0) return null;
-  const lines = normalizedText(patch).split("\n");
-  let oldHeader = null;
-  let newHeader = null;
-  let path = fallbackPath;
-  const hunks = [];
-  let additions = 0;
-  let deletions = 0;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (line.startsWith("--- ")) {
-      oldHeader = line.slice(4).trim().split(/\s+/)[0];
-      continue;
-    }
-    if (line.startsWith("+++ ")) {
-      newHeader = line.slice(4).trim().split(/\s+/)[0];
-      path = cleanPatchPath(line.slice(4)) ?? path ?? cleanPatchPath(oldHeader);
-      continue;
-    }
-    const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
-    if (!match) continue;
-    const hunk = {
-      oldStart: Number(match[1]),
-      oldLines: match[2] == null ? 1 : Number(match[2]),
-      newStart: Number(match[3]),
-      newLines: match[4] == null ? 1 : Number(match[4]),
-      lines: [],
+  try {
+    const patches = parsePatch(normalizedText(patch)).filter((entry) => entry.hunks.length > 0);
+    // 一个工具卡片只展示一个文件，不能把其他文件的 hunk 混到当前路径下。
+    const entry = patches.find((item) => fallbackPath != null &&
+      [cleanPatchPath(item.newFileName), cleanPatchPath(item.oldFileName)].includes(fallbackPath))
+      ?? patches[0];
+    if (!entry || !entry.hunks.every((hunk) =>
+      [hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines]
+        .every((value) => Number.isSafeInteger(value) && value >= 0))) return null;
+    const hunks = displayHunks(entry.hunks);
+    return {
+      path: cleanPatchPath(entry.newFileName) ?? fallbackPath ?? cleanPatchPath(entry.oldFileName),
+      oldText: null,
+      newText: null,
+      hunks,
+      ...countChanges(hunks),
+      operation: entry.oldFileName === "/dev/null" ? "create" : entry.newFileName === "/dev/null" ? "delete" : "update",
+      source: "patch",
+      complete: false,
+      hasLineNumbers: true,
     };
-    while (index + 1 < lines.length && !lines[index + 1].startsWith("@@ ")) {
-      const body = lines[index + 1];
-      if (body.startsWith("\\ No newline at end of file")) {
-        index += 1;
-        continue;
-      }
-      if (!body.startsWith(" ") && !body.startsWith("+") && !body.startsWith("-")) break;
-      hunk.lines.push(body);
-      if (body.startsWith("+")) additions += 1;
-      if (body.startsWith("-")) deletions += 1;
-      index += 1;
-    }
-    hunks.push(hunk);
+  } catch {
+    // 不完整或无效的 patch 不能让工具预览崩溃，继续尝试其他输入形态。
+    return null;
   }
-
-  if (hunks.length === 0) return null;
-  const operation = oldHeader === "/dev/null" ? "create" : newHeader === "/dev/null" ? "delete" : "update";
-  return {
-    path: path ?? cleanPatchPath(newHeader) ?? cleanPatchPath(oldHeader),
-    oldText: null,
-    newText: null,
-    hunks,
-    additions,
-    deletions,
-    operation,
-    source: "patch",
-    complete: false,
-    hasLineNumbers: true,
-  };
 }
 
 function rawInputDiff(rawInput) {
@@ -360,4 +240,3 @@ function rawInputDiff(rawInput) {
 export function extractToolDiff(info = {}) {
   return contentDiff(info.content) ?? rawInputDiff(info.rawInput);
 }
-

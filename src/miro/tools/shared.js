@@ -79,71 +79,91 @@ export const DEFAULT_IGNORED_DIRS = new Set([
   "__pycache__",
 ]);
 
-/**
- * 从 .gitignore 提取可按「单段目录名」处理的条目。
- *
- * 只认无 glob 元字符的单段名字；`build/output/*.o` 这类需要完整 gitignore
- * 语义才能正确匹配，宁可漏掉也不要误伤。
- */
-function parseGitignoreDirs(text) {
-  const ignore = new Set();
-  const unignore = new Set();
-  for (const raw of linesOf(text)) {
-    const line = raw.trim();
-    if (line === "" || line.startsWith("#")) continue;
-
+/** 把子目录规则锚定到共同根目录；模式本身仍交给 ignore 解析。 */
+function scopedIgnoreRules(text, scope) {
+  if (!scope) return text;
+  const prefix = scope.replace(/[\\*?[\] ]/g, "\\$&");
+  return text.split(/\r?\n/).flatMap((line) => {
+    if (!line || line.startsWith("#") || /^\s*$/.test(line)) return [];
     const negated = line.startsWith("!");
-    const body = negated ? line.slice(1) : line;
-
-    // 去掉前后的 '/'，剩下的必须是单段且不含 glob 元字符。
-    const name = body.replace(/^\/+/, "").replace(/\/+$/, "");
-    if (name === "" || name.includes("/") || /[*?[\]]/.test(name)) continue;
-
-    if (negated) unignore.add(name);
-    else ignore.add(name);
-  }
-  return { ignore, unignore };
+    const pattern = negated ? line.slice(1) : line;
+    if (!pattern.trim() || pattern.trimEnd() === "/") return [];
+    const anchored = pattern.startsWith("/") || pattern.trimEnd().replace(/\/$/, "").includes("/");
+    const body = pattern.startsWith("/") ? pattern.slice(1) : pattern;
+    return `${negated ? "!" : ""}/${prefix}/${anchored ? "" : "**/"}${body}`;
+  });
 }
 
 /**
- * 构造搜索用的目录过滤器，三层叠加：
- *   1. VCS 元数据目录，无条件跳过；
- *   2. 依赖/构建产物基线黑名单；
- *   3. 项目 .gitignore 里的单段目录名，追加忽略；其中 `!name` 可从第 2 层豁免。
+ * 搜索规则以最近的 Git 仓库为边界；非仓库只继承 cwd 内的规则。
+ * 每个目录按需加载 .gitignore，子目录规则覆盖父级，忽略目录不读取内部规则。
+ * glob 的 exclude 是同步回调，因此这里同步读取小文件并在单次搜索内缓存。
  */
-export async function buildIgnoreFilter(searchRoot) {
-  const { readFile } = await import("node:fs/promises");
+export async function buildIgnoreFilter(searchRoot, { cwd = searchRoot } = {}) {
+  const { lstatSync, readFileSync } = await import("node:fs");
   const nodePath = await import("node:path");
-
-  const extraIgnored = new Set();
-  const unignored = new Set();
-  try {
-    const text = await readFile(nodePath.join(searchRoot, ".gitignore"), "utf8");
-    const { ignore, unignore } = parseGitignoreDirs(text);
-    for (const name of ignore) extraIgnored.add(name);
-    for (const name of unignore) unignored.add(name);
-  } catch {
-    // 没有 .gitignore：只用前两层。
-  }
-
-  const isIgnoredName = (name) => {
-    if (typeof name !== "string") return false;
-    // VCS 目录不可被 .gitignore 的否定规则救回来。
-    if (VCS_DIRS.has(name)) return true;
-    if (unignored.has(name)) return false;
-    return DEFAULT_IGNORED_DIRS.has(name) || extraIgnored.has(name);
+  const { default: ignore } = await import("ignore");
+  const root = nodePath.resolve(searchRoot);
+  const relative = (base, path) => nodePath.relative(base, path).split(nodePath.sep).join("/");
+  const within = (base, path) => {
+    const rel = relative(base, path);
+    return rel !== ".." && !rel.startsWith("../") && !nodePath.isAbsolute(rel);
+  };
+  const info = (path) => {
+    try { return lstatSync(path); } catch { return null; }
   };
 
+  let boundary = within(nodePath.resolve(cwd), root) ? nodePath.resolve(cwd) : root;
+  for (let dir = root; ; dir = nodePath.dirname(dir)) {
+    if (info(nodePath.join(dir, ".git"))) {
+      boundary = dir;
+      break;
+    }
+    if (dir === nodePath.dirname(dir)) break;
+  }
+
+  const createMatcher = () => ignore({ ignoreCase: false });
+  const baseline = createMatcher().add([...DEFAULT_IGNORED_DIRS].map((name) => `${name}/`));
+  const cache = new Map();
+  const hasVcsDir = (path) => relative(boundary, path).split("/").some((name) => VCS_DIRS.has(name));
+
+  function matcherForDirectory(dir) {
+    if (cache.has(dir)) return cache.get(dir);
+    const parent = dir === boundary ? baseline : matcherForDirectory(nodePath.dirname(dir));
+    const scope = relative(boundary, dir);
+    let matcher = parent;
+    // 被忽略的父目录不能靠内部 .gitignore 重新纳入。
+    if (!scope || (!hasVcsDir(dir) && !parent.ignores(`${scope}/`))) {
+      const file = nodePath.join(dir, ".gitignore");
+      if (info(file)?.isFile()) {
+        try {
+          matcher = createMatcher().add(parent).add(scopedIgnoreRules(readFileSync(file, "utf8"), scope));
+        } catch {
+          // 文件不可读时继续使用父级规则。
+        }
+      }
+    }
+    cache.set(dir, matcher);
+    return matcher;
+  }
+
+  function isIgnoredPath(entry, isDirectory = false) {
+    const absolute = nodePath.resolve(root, entry);
+    if (!within(boundary, absolute)) return true;
+    const path = relative(boundary, absolute);
+    if (!path) return false;
+    const directories = isDirectory ? absolute : nodePath.dirname(absolute);
+    if (hasVcsDir(directories)) return true;
+    return matcherForDirectory(nodePath.dirname(absolute)).ignores(`${path}${isDirectory ? "/" : ""}`);
+  }
+
   return {
-    isIgnoredName,
-    /** glob 的 exclude 在不同运行时分别传路径或 Dirent，两种都要能识别。 */
+    isIgnoredPath,
+    /** 调用方使用 withFileTypes，避免只按 basename 剪掉同名但不同作用域的目录。 */
     isIgnoredEntry(entry) {
-      const name = typeof entry === "string" ? entry.split("/").at(-1) : entry?.name;
-      return isIgnoredName(name);
-    },
-    /** 产出路径逐段复查，兜住 exclude 回调未剪枝的情况。 */
-    isIgnoredPath(entry) {
-      return String(entry).split("/").some(isIgnoredName);
+      const parent = entry?.parentPath ?? entry?.path;
+      if (typeof parent !== "string" || typeof entry?.name !== "string") return false;
+      return isIgnoredPath(nodePath.join(parent, entry.name), entry.isDirectory());
     },
   };
 }

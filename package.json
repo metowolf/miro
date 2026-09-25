@@ -20,9 +20,12 @@
     "@anthropic-ai/sandbox-runtime": "0.0.77",
     "@earendil-works/pi-ai": "0.85.1",
     "chalk": "^6.0.0",
+    "diff": "^8.0.3",
+    "ignore": "7.0.5",
     "ink": "^7.1.1",
     "marked": "^18.0.13",
     "react": "^19.3.0",
+    "yaml": "2.9.1",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

@@ -9,8 +9,8 @@ export const GLOB_DEFINITION = {
   title: "Glob",
   description:
     "Find files by glob pattern. Returns matching file paths relative to the search directory. " +
-    "Skips version control directories, plus anything the project's .gitignore ignores " +
-    "(falling back to common dependency and build directories when there is no .gitignore). " +
+    "Skips version control directories and respects parent and nested .gitignore rules. " +
+    "Common dependency and build directories are also skipped unless explicitly unignored. " +
     `Output is truncated to ${GLOB_DEFAULT_LIMIT} results by default.`,
   parameters: {
     type: "object",
@@ -50,7 +50,7 @@ export function globTool(cwd) {
       return { error: `glob: path not found: ${searchRoot}` };
     }
 
-    const ignoreFilter = await buildIgnoreFilter(searchRoot);
+    const ignoreFilter = await buildIgnoreFilter(searchRoot, { cwd });
 
     const matches = [];
     let limitReached = false;
@@ -58,20 +58,22 @@ export function globTool(cwd) {
       for await (const entry of glob(pattern, {
         cwd: searchRoot,
         dot: false,
+        withFileTypes: true,
         exclude: ignoreFilter.isIgnoredEntry,
       })) {
-        if (ignoreFilter.isIgnoredPath(entry)) continue;
+        const absolute = nodePath.join(entry.parentPath ?? entry.path, entry.name);
+        if (ignoreFilter.isIgnoredPath(absolute, entry.isDirectory())) continue;
 
         // 只报告文件，目录命中对调用方没有价值。
         let info;
         try {
-          info = await stat(nodePath.join(searchRoot, entry));
+          info = await stat(absolute);
         } catch {
           continue;
         }
         if (!info.isFile()) continue;
 
-        matches.push(entry);
+        matches.push(nodePath.relative(searchRoot, absolute));
         if (matches.length >= limit) {
           limitReached = true;
           break;

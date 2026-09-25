@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { isMap, parseDocument } from "yaml";
 
 /**
  * Agent Skills（`SKILL.md` 规范）的发现、校验与注入。
@@ -68,85 +69,6 @@ function asString(value) {
 // ---------------------------------------------------------------------------
 
 /**
- * 单行标量。只实现 skill frontmatter 实际会写的形态，不做完整 YAML ——
- * 一个手写的子集比一个新依赖更好审：这里解析的东西会直接进 system prompt。
- */
-function parseScalar(value) {
-  const text = value.trim();
-  if (text.length === 0) return "";
-  if (text.startsWith('"')) {
-    const match = /^"((?:[^"\\]|\\.)*)"/.exec(text);
-    return match
-      ? match[1].replace(/\\(["\\/nrt])/g, (_, ch) => ({ n: "\n", r: "\r", t: "\t", '"': '"', "\\": "\\", "/": "/" })[ch])
-      : text;
-  }
-  if (text.startsWith("'")) {
-    const match = /^'((?:[^']|'')*)'/.exec(text);
-    return match ? match[1].replace(/''/g, "'") : text;
-  }
-  // 未加引号：` #` 之后是注释，没有前导空格的 `#` 属于值本身。
-  const comment = text.search(/\s#/);
-  const plain = (comment === -1 ? text : text.slice(0, comment)).trim();
-  if (plain === "true") return true;
-  if (plain === "false") return false;
-  return plain;
-}
-
-/** `>` 把同一段内的换行折成空格，空行分段；`|` 原样保留换行。 */
-function foldLines(text) {
-  return text
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.split("\n").map((line) => line.trim()).filter(Boolean).join(" "))
-    .join("\n");
-}
-
-function parseBlockScalar(lines, indicator) {
-  // 去掉整体缩进：YAML 允许块标量任意缩进，取其非空行的最小缩进即可。
-  const indents = lines.filter((line) => line.trim().length > 0).map((line) => line.match(/^ */)[0].length);
-  const base = indents.length > 0 ? Math.min(...indents) : 0;
-  const content = lines.map((line) => line.slice(base)).join("\n");
-  // 收尾换行（以及 `|-` / `|+` 的差异）对 description 没有意义，统一 trim。
-  return (indicator.startsWith("|") ? content : foldLines(content)).trim();
-}
-
-/**
- * 顶层键的极简 YAML 子集：`key: value`、引号、`>` / `|` 块标量。
- * 缩进行一律当作上一个键的嵌套内容跳过 —— skill 的元数据只用得到顶层。
- */
-function parseYamlSubset(text) {
-  const data = {};
-  const lines = text.split("\n");
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (line.trim().length === 0 || line.trimStart().startsWith("#")) continue;
-    const match = /^([A-Za-z0-9_.-]+):(?:[ \t]+(.*))?$/.exec(line);
-    if (!match) continue;
-    const key = match[1];
-    const inline = (match[2] ?? "").trim();
-
-    if (/^[|>][-+]?\d*$/.test(inline)) {
-      const block = [];
-      let next = i + 1;
-      for (; next < lines.length; next += 1) {
-        const candidate = lines[next];
-        if (candidate.trim().length === 0) {
-          block.push("");
-          continue;
-        }
-        if (!/^\s/.test(candidate)) break;
-        block.push(candidate);
-      }
-      data[key] = parseBlockScalar(block, inline);
-      i = next - 1;
-      continue;
-    }
-
-    data[key] = parseScalar(inline);
-  }
-  return data;
-}
-
-/**
  * 拆出 frontmatter 与正文。
  *
  * `present` 用来区分两种「没有元数据」：普通 markdown 文件（静默忽略）与
@@ -159,7 +81,8 @@ export function parseSkillFrontmatter(text) {
 
   let end = -1;
   for (let i = 1; i < lines.length; i += 1) {
-    const trimmed = lines[i].trim();
+    // 缩进的分隔符可能是块标量正文，不应提前结束 frontmatter。
+    const trimmed = lines[i].trimEnd();
     if (trimmed === "---" || trimmed === "...") {
       end = i;
       break;
@@ -171,7 +94,29 @@ export function parseSkillFrontmatter(text) {
   if (Buffer.byteLength(raw, "utf8") > MAX_FRONTMATTER_BYTES) {
     return { present: true, data: {}, body: "", tooLarge: true };
   }
-  return { present: true, data: parseYamlSubset(raw), body: lines.slice(end + 1).join("\n").trim() };
+  const body = lines.slice(end + 1).join("\n").trim();
+  try {
+    // 保留结束分隔符前的换行，让块标量的 chomping 按 YAML 标准处理。
+    // 只接受 core schema；未知标签、重复键与非标量键均作为诊断，不做宽松回退。
+    const doc = parseDocument(`${raw}\n`, {
+      schema: "core",
+      merge: false,
+      resolveKnownTags: false,
+      uniqueKeys: true,
+      stringKeys: true,
+      prettyErrors: false,
+    });
+    const issue = doc.errors[0] ?? doc.warnings[0];
+    if (issue) throw issue;
+    if (doc.contents != null && !isMap(doc.contents)) {
+      throw new Error("frontmatter must be a YAML mapping");
+    }
+    // 字节上限之外再限制别名展开，防止小文件通过嵌套引用耗尽资源。
+    const data = doc.toJS({ maxAliasCount: 100 }) ?? {};
+    return { present: true, data, body };
+  } catch (error) {
+    return { present: true, data: {}, body, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +187,10 @@ function readSkill(file, source, diagnostics) {
     // 普通 markdown 不是 skill，静默跳过；只有 SKILL.md 这个文件名本身是
     // 「我本该是 skill」的声明，缺 frontmatter 才值得报。
     if (isSkillFile) diagnostics.push(warn("missing-frontmatter", file, "SKILL.md has no frontmatter; skill skipped"));
+    return null;
+  }
+  if (parsed.error) {
+    diagnostics.push(warn("invalid-frontmatter", file, `invalid YAML frontmatter: ${parsed.error}; skill skipped`));
     return null;
   }
 
@@ -443,7 +392,10 @@ export function expandSkillCommand(text, skills) {
   const raw = readText(skill.filePath);
   if (raw == null) return null;
 
-  const body = parseSkillFrontmatter(raw).body;
+  const frontmatter = parseSkillFrontmatter(raw);
+  // 文件可能在发现后被改坏；交回调用方按原消息处理，不注入无效 skill。
+  if (!frontmatter.present || frontmatter.tooLarge || frontmatter.error) return null;
+  const body = frontmatter.body;
   const block = [
     `<skill name="${escapeXml(skill.name)}" location="${escapeXml(skill.filePath)}">`,
     `References are relative to ${skill.baseDir}.`,

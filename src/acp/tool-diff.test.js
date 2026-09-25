@@ -151,3 +151,76 @@ test("returns null when nothing can be parsed", () => {
   assert.equal(extractToolDiff({ content: [{ type: "text", text: "no diff" }] }), null);
   assert.equal(extractToolDiff({ rawInput: { patch: "plain text" } }), null);
 });
+
+test("预览归一化换行并忽略文件末尾换行差异", () => {
+  const result = extractToolDiff({ rawInput: { oldText: "one\r\ntwo\r", newText: "one\ntwo" } });
+  assert.deepEqual(result.hunks, []);
+  assert.equal(result.additions, 0);
+  assert.equal(result.deletions, 0);
+  assert.equal(result.oldText, "one\ntwo\n");
+  assert.equal(result.newText, "one\ntwo");
+});
+
+test("相距较远的改动拆成独立 hunk", () => {
+  const oldLines = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`);
+  const newLines = [...oldLines];
+  newLines[1] = "changed 2";
+  newLines[18] = "changed 19";
+  const result = extractToolDiff({ rawInput: { oldText: oldLines.join("\n"), newText: newLines.join("\n") } });
+  assert.equal(result.hunks.length, 2);
+  assert.equal(result.hunks[0].oldStart, 1);
+  assert.equal(result.hunks[1].oldStart, 16);
+  assert.equal(result.additions, 2);
+  assert.equal(result.deletions, 2);
+});
+
+test("超过编辑距离预算时降级为完整删除和新增", () => {
+  const oldLines = Array.from({ length: 600 }, (_, index) => `old ${index}`);
+  const newLines = Array.from({ length: 600 }, (_, index) => `new ${index}`);
+  const result = extractToolDiff({ rawInput: { oldText: oldLines.join("\n"), newText: newLines.join("\n") } });
+  assert.deepEqual(result.hunks, [{
+    oldStart: 1, oldLines: 600, newStart: 1, newLines: 600,
+    lines: [...oldLines.map((line) => `-${line}`), ...newLines.map((line) => `+${line}`)],
+  }]);
+  assert.equal(result.additions, 600);
+  assert.equal(result.deletions, 600);
+});
+
+test("patch 保留含空格路径及空区间坐标，不显示末尾换行标记", () => {
+  const result = extractToolDiff({ rawInput: { patch: [
+    "--- /dev/null", "+++ b/new file.txt\t2026-01-01", "@@ -0,0 +1 @@",
+    "+hello", "\\ No newline at end of file",
+  ].join("\n") } });
+  assert.equal(result.path, "new file.txt");
+  assert.equal(result.operation, "create");
+  assert.deepEqual(result.hunks, [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 1, lines: ["+hello"] }]);
+  const deletion = extractToolDiff({ rawInput: { patch: "--- a/gone.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone" } });
+  assert.equal(deletion.path, "gone.txt");
+  assert.equal(deletion.operation, "delete");
+  assert.equal(deletion.hunks[0].newStart, 0);
+});
+
+test("多文件 patch 按输入路径选择，否则只显示首个文件", () => {
+  const patch = [
+    "--- a/first.txt", "+++ b/first.txt", "@@ -1 +1 @@", "-one", "+ONE",
+    "--- a/second.txt", "+++ b/second.txt", "@@ -1 +1 @@", "-two", "+TWO",
+  ].join("\n");
+  const first = extractToolDiff({ rawInput: { patch } });
+  assert.equal(first.path, "first.txt");
+  assert.equal(first.additions, 1);
+  assert.deepEqual(first.hunks[0].lines, ["-one", "+ONE"]);
+  const second = extractToolDiff({ rawInput: { path: "second.txt", patch } });
+  assert.equal(second.path, "second.txt");
+  assert.deepEqual(second.hunks[0].lines, ["-two", "+TWO"]);
+});
+
+test("无文件头 patch 使用输入路径，无效 patch 回退其他输入", () => {
+  const result = extractToolDiff({ rawInput: { path: "a.txt", patch: "@@ -1 +1 @@\n-a\n+b" } });
+  assert.equal(result.path, "a.txt");
+  assert.equal(result.hasLineNumbers, true);
+  for (const patch of ["@@ broken @@", "@@ -1,3 +1,2 @@\n-a\n+b", "@@ -9007199254740992 +1 @@\n-a\n+b"]) {
+    assert.equal(extractToolDiff({ rawInput: { patch } }), null);
+    const fallback = extractToolDiff({ rawInput: { patch, old_string: "a", new_string: "b" } });
+    assert.equal(fallback.source, "raw-input");
+  }
+});

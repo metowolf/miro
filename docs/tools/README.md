@@ -96,18 +96,24 @@
 
 ### 忽略规则（搜索类工具共用）
 
-`grep` 与 `glob` 用同一套目录过滤器（`src/miro/tools/shared.js` 的
-`buildIgnoreFilter`），它按三层叠加：
+`grep` 的目录搜索与 `glob` 用同一套过滤器（`src/miro/tools/shared.js` 的
+`buildIgnoreFilter`），规则匹配交给 `ignore`，按三层叠加：
 
-1. VCS 元数据目录无条件跳过：`.git`、`.svn`、`.hg`、`.bzr`、`.jj`、`.sl`；
-2. 依赖与构建产物基线黑名单始终生效：`node_modules`、`dist`、`build`、`out`、`target`、
-   `coverage`、`vendor`、`.next`、`.cache`、`.venv`、`venv`、`__pycache__`；
-3. 项目 `.gitignore` 里**单段、不含 glob 元字符**的目录名追加忽略；`!name` 能把某项从
-   第 2 层救回来。
+1. VCS 元数据目录无条件跳过：`.git`、`.svn`、`.hg`、`.bzr`、`.jj`、`.sl`，不能反忽略。
+2. 依赖与构建产物目录默认排除：`node_modules`、`dist`、`build`、`out`、`target`、
+   `coverage`、`vendor`、`.next`、`.cache`、`.venv`、`venv`、`__pycache__`，同名普通文件不排除。
+3. 父级和嵌套 `.gitignore` 按顺序覆盖，支持文件模式、`**`、根锚点、转义和 `!` 反忽略。
+   每份规则相对所在目录；例如 `/build/` 不会排除该目录下 `src/build/`。
 
-第 2 层就是「没有 .gitignore 时的回退」，两者不是替代关系：很多仓库靠全局 gitignore
-忽略 `node_modules`，只读项目内的 `.gitignore` 会把这些目录重新搜一遍。需要搜黑名单里
-的目录时，在 `.gitignore` 写 `!name` 显式取消。
+第 2 层不因存在 `.gitignore` 而失效。需要搜索默认排除的目录时，可以在父级规则里用
+`!dist/` 显式取消。被排除的父目录必须先反忽略，内部 `.gitignore` 不能救回父目录。
+
+从搜索目录向上定位最近的 Git 仓库（兼容 `.git` 文件的 worktree），继承到仓库根为止；
+没有仓库时只继承工作区 `cwd` 范围内的规则，搜索工作区外的非仓库目录则从搜索根开始。
+遍历时按需加载并缓存嵌套规则，不读取符号链接形式的 `.gitignore`。规则区分大小写，
+不读取全局 Git 配置或 `.git/info/exclude`，也不依据 Git 索引豁免已跟踪文件。
+
+`grep` 显式指定单个文件时保留直接读取行为，不套用上述目录过滤规则。
 
 ### 信任边界
 

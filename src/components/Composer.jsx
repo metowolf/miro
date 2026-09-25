@@ -1,5 +1,5 @@
-import { Box, Text, useInput, usePaste, useStdout } from "ink";
-import { useEffect, useRef, useState } from "react";
+import { Box, Text, useBoxMetrics, useInput, usePaste, useWindowSize } from "ink";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { generateCommandSuggestions, SLASH_COMMANDS } from "../commands.js";
 import { isBashInput } from "../bash.js";
@@ -23,23 +23,20 @@ import {
   applyPathSuggestion,
   extractAtToken,
   extractPathToken,
+  fileSuggestionKey,
   generateBashSuggestions,
   generateFileSuggestions,
 } from "../file-suggestions.js";
 import { cloneInputSnapshot, getInputHistory } from "../input-history.js";
+import { createPickerRequest, pickerQueryState } from "./picker/picker-query.js";
+import { completionHint, completionViewport } from "./picker/picker-completion.js";
+import { truncatePathToCellWidth } from "./picker/picker-rows.js";
 
-const MAX_VISIBLE_FILE_SUGGESTIONS = 8;
 /** 命令候选按总行数限高，避免描述长短导致高度跳动。 */
 const COMMAND_SUGGESTION_LINES = 10;
 const COMMAND_DESCRIPTION_LINES = 2;
 const MIN_DESCRIPTION_WIDTH = 20;
 const FILE_SUGGESTION_DEBOUNCE_MS = 50;
-
-/** 保证选中项在窗口内且尽量居中。 */
-function windowStart(index, total, size) {
-  if (total <= size) return 0;
-  return Math.max(0, Math.min(index - Math.floor(size / 2), total - size));
-}
 
 /** 按宽度折行，最多 maxLines 行。 */
 function wrapDescription(text, width, maxLines) {
@@ -122,17 +119,20 @@ export function Composer({
   inputHistory = null,
   helpOpen = false,
   onHelpOpenChange,
+  onCompletionOpenChange,
   sessionKey = null,
   initialSnapshot = null,
   onSnapshotChange,
   controlsRef = null,
 }) {
-  const { stdout } = useStdout();
+  const { columns = 80, rows = 24 } = useWindowSize();
+  const inputBoxRef = useRef(null);
+  const inputMetrics = useBoxMetrics(inputBoxRef);
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [dismissed, setDismissed] = useState(false);
-  const [fileSuggestions, setFileSuggestions] = useState([]);
+  const [fileSuggestions, setFileSuggestions] = useState(null);
 
   const historyRef = useRef(inputHistory ?? getInputHistory());
   const onSnapshotChangeRef = useRef(onSnapshotChange);
@@ -186,22 +186,23 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathTokenKey]);
 
-  const fetchSeq = useRef(0);
-  const tokenKey = fileToken ? `${fileToken.startPos}:${fileToken.query}` : null;
+  const tokenKey = dismissed ? null : fileSuggestionKey(fileToken);
   useEffect(() => {
-    if (!tokenKey) {
-      setFileSuggestions([]);
-      return;
-    }
-    const seq = ++fetchSeq.current;
-    const query = tokenKey.slice(tokenKey.indexOf(":") + 1);
+    setFileSuggestions(null);
+    if (tokenKey == null) return;
+    const request = createPickerRequest(tokenKey, setFileSuggestions);
     const timer = setTimeout(() => {
-      generateFileSuggestions(query).then((items) => {
-        if (fetchSeq.current === seq) setFileSuggestions(items);
-      });
+      generateFileSuggestions(fileToken.query).then(request.resolve, () => request.resolve([]));
     }, FILE_SUGGESTION_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [tokenKey]);
+    return () => {
+      clearTimeout(timer);
+      request.cancel();
+    };
+    // tokenKey 已包含位置和完整令牌，不能依赖每次渲染都会新建的 fileToken 对象。
+    // 切换会话会清空候选；即使两个草稿的令牌相同，也必须重新请求。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenKey, sessionKey]);
+  const fileQuery = pickerQueryState(fileSuggestions, tokenKey);
 
   const isFileMode = Boolean(fileToken);
   const isPathMode = !isFileMode && Boolean(pathToken);
@@ -223,12 +224,19 @@ export function Composer({
   const activeSuggestions = dismissed || disabled
     ? []
     : isFileMode
-      ? fileSuggestions
+      ? fileQuery.items
       : isPathMode
         ? pathSuggestions
         : commandSuggestions;
   const showSuggestions = activeSuggestions.length > 0;
   const activeIndex = Math.min(selectedIndex, Math.max(0, activeSuggestions.length - 1));
+  const completionOpen = showSuggestions || fileQuery.pending;
+
+  // 候选和加载提示都占用底部区域；同步让状态栏让位，卸载时也要归还。
+  useLayoutEffect(() => {
+    onCompletionOpenChange?.(completionOpen);
+    return () => onCompletionOpenChange?.(false);
+  }, [completionOpen, onCompletionOpenChange]);
 
   const currentSnapshot = () =>
     cloneInputSnapshot({
@@ -268,7 +276,7 @@ export function Composer({
     setPastes(restored.pastes);
     setSelectedIndex(0);
     setDismissed(false);
-    setFileSuggestions([]);
+    setFileSuggestions(null);
     setBashPathActive(false);
     setPathSuggestions([]);
     if (resetHistory) historyRef.current.resetNavigation();
@@ -291,7 +299,7 @@ export function Composer({
     setCursor(0);
     setSelectedIndex(0);
     setDismissed(false);
-    setFileSuggestions([]);
+    setFileSuggestions(null);
     setBashPathActive(false);
     setPathSuggestions([]);
     pastesRef.current = new Map();
@@ -333,9 +341,14 @@ export function Composer({
   };
 
   const applyActiveFileSuggestion = () => {
-    const suggestion = activeSuggestions[activeIndex];
-    const { nextChars, nextCursor } = applyFileSuggestion(chars, fileToken, suggestion);
-    if (!suggestion.isDirectory) setFileSuggestions([]);
+    // 连按可能先于 React 下一帧：必须用命令式草稿重算，不能信任闭包里的 chars/fileToken。
+    const currentChars = [...valueRef.current];
+    const currentPos = currentChars.slice(0, cursorRef.current).join("").length;
+    const token = extractAtToken(valueRef.current, currentPos);
+    const suggestion = pickerQueryState(fileSuggestions, fileSuggestionKey(token)).items[activeIndex];
+    if (!suggestion) return;
+    const { nextChars, nextCursor } = applyFileSuggestion(currentChars, token, suggestion);
+    setFileSuggestions(null);
     replace(nextChars, nextCursor);
   };
 
@@ -428,6 +441,23 @@ export function Composer({
         const next = insertTextAtCursor(currentChars, currentCursor, "\n");
         replace(next.chars, next.cursor);
         return;
+      }
+
+      const currentPos = currentChars.slice(0, currentCursor).join("").length;
+      const currentFileToken = historyRef.current.isBrowsing(currentValue, currentCursor)
+        ? null
+        : extractAtToken(currentValue, currentPos);
+      if (!dismissed && (isFileMode || currentFileToken)) {
+        if (key.escape) {
+          setDismissed(true);
+          return;
+        }
+        const currentQuery = pickerQueryState(fileSuggestions, fileSuggestionKey(currentFileToken));
+        // 等待时仍接管补全键，尤其不能让 Enter 穿透成发送，或让方向键跳进历史。
+        if (
+          (currentQuery.pending || !currentFileToken) &&
+          (key.tab || key.return || key.upArrow || key.downArrow)
+        ) return;
       }
 
       if (showSuggestions) {
@@ -591,7 +621,7 @@ export function Composer({
 
   const descriptionWidth = Math.max(
     MIN_DESCRIPTION_WIDTH,
-    (stdout?.columns ?? 80) - 2 - (nameColumnWidth + 2)
+    columns - 2 - (nameColumnWidth + 2)
   );
   const commandRows = isPathLikeMode
     ? []
@@ -606,17 +636,22 @@ export function Composer({
   );
   const packed = packRows(rowCosts, activeIndex, commandBudget);
 
-  const windowFrom = isPathLikeMode
-    ? windowStart(activeIndex, activeSuggestions.length, MAX_VISIBLE_FILE_SUGGESTIONS)
-    : packed.start;
+  const viewport = completionViewport({
+    index: activeIndex,
+    total: activeSuggestions.length,
+    rows,
+    inputRows: inputMetrics.hasMeasured ? inputMetrics.height : 3,
+  });
+  const windowFrom = isPathLikeMode ? viewport.start : packed.start;
   const visibleSuggestions = isPathLikeMode
-    ? activeSuggestions.slice(windowFrom, windowFrom + MAX_VISIBLE_FILE_SUGGESTIONS)
+    ? activeSuggestions.slice(viewport.start, viewport.end)
     : commandRows.slice(packed.start, packed.end + 1).map((row) => row.item);
   const fillerLines = isPathLikeMode ? 0 : Math.max(0, commandBudget - packed.used);
 
   return (
     <Box flexDirection="column">
       <Box
+        ref={inputBoxRef}
         borderStyle="round"
         borderColor={accentColor}
         borderLeft={false}
@@ -654,12 +689,19 @@ export function Composer({
           {visibleSuggestions.map((item, index) => {
             const active = windowFrom + index === activeIndex;
             if (isPathLikeMode) {
-              const detail = item.isDirectory ? "dir" : item.isCommand ? "cmd" : "";
+              const detail = item.isCommand ? "cmd" : "";
+              const pathWidth = Math.max(0, columns - 4 - (detail ? detail.length + 2 : 0));
               return (
-                <Text key={item.displayText} color={active ? "cyan" : undefined} bold={active}>
+                <Text
+                  key={item.displayText}
+                  color={active ? "cyan" : undefined}
+                  bold={active}
+                  dimColor={!active}
+                  wrap="truncate"
+                >
                   {active ? "❯ " : "  "}
-                  {item.displayText}
-                  {detail ? <Text dimColor={!active}>{"  "}{detail}</Text> : null}
+                  {truncatePathToCellWidth(item.displayText, pathWidth)}
+                  {detail ? <Text>{"  "}{detail}</Text> : null}
                 </Text>
               );
             }
@@ -689,14 +731,18 @@ export function Composer({
             );
           })}
           {fillerLines > 0 ? <Box height={fillerLines} flexShrink={0} /> : null}
-          <Text dimColor>
+          <Text dimColor wrap="truncate">
             {isPathLikeMode
-              ? "Tab/Enter to complete · Esc to dismiss"
+              ? completionHint(Math.max(0, columns - 2), viewport, activeSuggestions.length)
               : "Tab to complete · Enter to run · Esc to dismiss"}
-            {activeSuggestions.length > visibleSuggestions.length
+            {!isPathLikeMode && activeSuggestions.length > visibleSuggestions.length
               ? `  ·  ${activeIndex + 1}/${activeSuggestions.length}`
               : ""}
           </Text>
+        </Box>
+      ) : fileQuery.pending ? (
+        <Box paddingX={1}>
+          <Text dimColor wrap="truncate">Finding files… · Esc to dismiss</Text>
         </Box>
       ) : helpOpen ? (
         <ShortcutHelp />

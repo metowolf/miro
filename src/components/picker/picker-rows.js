@@ -90,6 +90,44 @@ export function truncateToCellWidth(text, width) {
   return `${output}…`;
 }
 
+const pathGraphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function pathCells(text, width, fromEnd = false) {
+  const parts = Array.from(pathGraphemes.segment(text), (part) => part.segment);
+  if (fromEnd) parts.reverse();
+  const kept = [];
+  let used = 0;
+  for (const part of parts) {
+    const cells = stringWidth(part);
+    if (used + cells > width) break;
+    kept.push(part);
+    used += cells;
+  }
+  return (fromEnd ? kept.reverse() : kept).join("");
+}
+
+/** 路径只在展示时省略中段，优先保留 basename、扩展名和目录尾斜线。 */
+export function truncatePathToCellWidth(text, width) {
+  const source = String(text ?? "").replace(/[\u0000-\u001f\u007f-\u009f]/g,
+    (char) => ({ "\n": "\\n", "\r": "\\r", "\t": "\\t" }[char] ?? "�"));
+  const limit = Math.max(0, Math.floor(width));
+  if (stringWidth(source) <= limit) return source;
+  if (limit === 0) return "";
+  if (limit === 1) return "…";
+
+  const slash = source.lastIndexOf("/", source.endsWith("/") ? source.length - 2 : source.length - 1);
+  const basename = source.slice(slash + 1);
+  if (slash >= 0) {
+    const suffix = source.slice(slash);
+    if (stringWidth(suffix) < limit) {
+      return `${pathCells(source.slice(0, slash), limit - 1 - stringWidth(suffix))}…${suffix}`;
+    }
+    if (stringWidth(basename) < limit) return `…${basename}`;
+  }
+  const suffix = pathCells(basename, Math.floor((limit - 1) / 2), true);
+  return `${pathCells(basename, limit - 1 - stringWidth(suffix))}…${suffix}`;
+}
+
 /**
  * 左右两栏布局：右栏最多占内容宽度的一半，左栏吃掉剩余空间。
  * 内容宽度过窄（< 8）时放弃右栏，全部给左栏。

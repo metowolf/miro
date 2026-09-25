@@ -44,6 +44,11 @@ export function extractAtToken(text, cursorPos) {
   return { token, startPos: atIdx, query: token.slice(1) };
 }
 
+/** 连确认键也要用最新草稿重算身份，不能依赖上一帧闭包里的令牌。 */
+export function fileSuggestionKey(token) {
+  return token ? `${token.startPos}:${token.token}` : null;
+}
+
 let cache = { cwd: null, expiresAt: 0, promise: null };
 
 export function clearFileSuggestionCache() {
@@ -282,7 +287,8 @@ function matchRank(candidate, query) {
 
 export async function generateFileSuggestions(query, opts = {}) {
   const cwd = opts.cwd ?? process.cwd();
-  const limit = opts.limit ?? MAX_SUGGESTIONS;
+  // 可见行数由 picker 控制；默认返回完整匹配，避免后面的路径永远无法选中。
+  const limit = opts.limit ?? Infinity;
 
   try {
     const { files, dirs } = await listWorkspacePaths(cwd);

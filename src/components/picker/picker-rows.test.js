@@ -9,8 +9,10 @@ import {
   normalizeItem,
   normalizeItems,
   splitRowWidth,
+  truncatePathToCellWidth,
   truncateToCellWidth,
 } from "./picker-rows.js";
+import { stringWidth } from "../../markdown-width.js";
 
 test("normalizeItem falls back through label → name → value in order", () => {
   assert.equal(normalizeItem({ value: "v", label: "L", name: "N" }, 0).label, "L");
@@ -114,6 +116,43 @@ test("truncateToCellWidth truncates CJK by cell width", () => {
   assert.equal(truncateToCellWidth("abc", 10), "abc");
   assert.equal(truncateToCellWidth("abcdef", 1), "…");
   assert.equal(truncateToCellWidth("abcdef", 0), "");
+});
+
+test("路径优先省略父目录，保留文件名、扩展名和目录尾斜线", () => {
+  const source = "src/components/picker/picker-rows.test.js";
+  const shown = truncatePathToCellWidth(source, 30);
+  assert.ok(shown.startsWith("src/"));
+  assert.ok(shown.endsWith("/picker-rows.test.js"));
+  assert.equal(stringWidth(shown), 30);
+  assert.equal(truncatePathToCellWidth("src/a.js", 20), "src/a.js");
+  assert.equal(truncatePathToCellWidth("src/components/", 12), "…components/");
+  const longName = truncatePathToCellWidth("extremely-long-component-name.test.js", 20);
+  assert.ok(longName.startsWith("ext"));
+  assert.ok(longName.endsWith(".test.js"));
+});
+
+test("路径省略按终端格宽而非字符数裁剪，不切开 CJK 或 emoji 字素", () => {
+  const paths = [
+    "配置/组件/选择器.test.js",
+    "src/👩‍💻👩‍💻👩‍💻.js",
+    "src/e\u0301e\u0301e\u0301e\u0301.js",
+    "very-long-directory/nested/",
+  ];
+  for (const source of paths) {
+    for (let width = 0; width <= 40; width += 1) {
+      const shown = truncatePathToCellWidth(source, width);
+      assert.ok(stringWidth(shown) <= width);
+      assert.doesNotMatch(shown, /^\p{M}|\u200d…|…\u200d/u);
+      assert.doesNotMatch(shown.replaceAll("👩‍💻", ""), /👩|💻/u);
+    }
+  }
+  assert.equal(truncatePathToCellWidth("abc", 0), "");
+  assert.equal(truncatePathToCellWidth("abc", 1), "…");
+});
+
+test("路径中的换行和控制字符只在展示时转义", () => {
+  assert.equal(truncatePathToCellWidth("dir/a\nb\tc.js", 40), "dir/a\\nb\\tc.js");
+  assert.doesNotMatch(truncatePathToCellWidth("dir/a\u001b[31m.js", 40), /\u001b/);
 });
 
 test("splitRowWidth gives the right column at most half the content width", () => {

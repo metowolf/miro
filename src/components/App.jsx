@@ -229,6 +229,11 @@ export function composerIsHidden(connecting, overlayKind) {
   );
 }
 
+/** 底部面板替代常驻状态行；连接、退出等高优先级提示仍由 StatusBar 决定。 */
+export function statusLineIsHidden({ helpOpen = false, completionOpen = false, overlay = null } = {}) {
+  return helpOpen || completionOpen || overlay != null;
+}
+
 /**
  * Ctrl+C 的归属：overlay 先吃掉它，其次是输入框里的草稿，最后才轮到中断与退出确认。
  * 顺序是载重的：误按一次丢掉正在写的 prompt，远比打断一个跑了几分钟的回合便宜，
@@ -423,6 +428,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
   const modeSwitchingRef = useRef(false);
   const [modeSwitching, setModeSwitching] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [completionOpen, setCompletionOpen] = useState(false);
   const [agentBin, setAgentBin] = useState("provider");
 
   const status = useStore((state) => state.status);
@@ -2921,6 +2927,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
           providerCommands={providerCommands}
           helpOpen={helpOpen}
           onHelpOpenChange={setHelpOpen}
+          onCompletionOpenChange={setCompletionOpen}
           sessionKey={composerSession.key}
           initialSnapshot={composerSession.snapshot}
           onSnapshotChange={handleComposerSnapshotChange}
@@ -2971,7 +2978,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
             cancelling,
             thinking,
           }}
-          hidden={helpOpen}
+          hidden={statusLineIsHidden({ helpOpen, completionOpen, overlay })}
         />
       </Box>
         </>

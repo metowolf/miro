@@ -3,7 +3,7 @@ import process from "node:process";
 
 import { currentModelName } from "../acp/model.js";
 import { APP_VERSION } from "../config.js";
-import { MIRO_LOGO } from "../figures.js";
+import { MIRO_LOGO, MIRO_LOGO_ROWS } from "../figures.js";
 import { stringWidth } from "../markdown-width.js";
 import { useStore } from "../store.js";
 
@@ -20,8 +20,12 @@ export function Banner() {
 
   return (
     <Box flexDirection={stacked ? "column" : "row"} paddingX={1} marginY={1}>
-      <Box width={LOGO_WIDTH} flexShrink={0} marginRight={stacked ? 0 : 2} marginBottom={stacked ? 1 : 0}>
-        <Text color="cyan">{MIRO_LOGO}</Text>
+      <Box width={LOGO_WIDTH} flexDirection="column" flexShrink={0} marginRight={stacked ? 0 : 2} marginBottom={stacked ? 1 : 0}>
+        {MIRO_LOGO_ROWS.map((row, rowIndex) => (
+          <Text key={rowIndex}>
+            {row.map(([glyphs, color], segmentIndex) => <Text key={segmentIndex} color={color}>{glyphs}</Text>)}
+          </Text>
+        ))}
       </Box>
       <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
         <Text wrap="truncate">

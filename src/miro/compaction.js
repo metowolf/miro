@@ -442,6 +442,13 @@ export function mergeChunkSummaries(summaries) {
     .join("\n\n");
 }
 
+/**
+ * Cerebras 这类「无 body 的 400/413」：pi-ai 从 0.87 起只在 provider 明确是
+ * cerebras 时才认，而 miro 面对的是任意兼容网关、拿不到 provider，所以这条
+ * 窄特征自己留着。文案整行就是这个模式，不会和限流文案混在一起。
+ */
+const BODYLESS_OVERFLOW_PATTERN = /^4(?:00|13)\s*(?:status code)?\s*\(no body\)$/i;
+
 /** 判断一次失败是否是上下文超窗；vendor 特征与限流排除交给 pi-ai。 */
 export function isContextOverflowError(error) {
   if (!error) return false;
@@ -452,5 +459,8 @@ export function isContextOverflowError(error) {
     .join("\n")
     .replace(/prompt_too_long/gi, "prompt is too long")
     .replace(/input length and `max_tokens` exceed/gi, "exceeds the context window");
-  return isContextOverflow({ stopReason: "error", errorMessage });
+  if (isContextOverflow({ stopReason: "error", errorMessage })) return true;
+  return errorMessage
+    .split("\n")
+    .some((line) => BODYLESS_OVERFLOW_PATTERN.test(line.trim()));
 }

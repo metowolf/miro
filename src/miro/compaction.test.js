@@ -297,13 +297,27 @@ test("超窗识别复用 pi-ai 的 provider 分类并兼容网关格式", () => 
     "The input token count (200000) exceeds the maximum number of tokens allowed (100000)",
     "prompt token count of 200000 exceeds the limit of 100000",
     "Range of input length should be [1, 32768]",
-    "400 status code (no body)",
     "prompt_too_long",
     "input length and `max_tokens` exceed context limit",
   ]) {
     assert.equal(isContextOverflowError(new Error(message)), true, message);
   }
   assert.equal(isContextOverflowError({ contextOverflow: true, message: "provider overflow" }), true);
+});
+
+test("无 body 的 400/413 按整行识别，避免把限流文案算成超窗", () => {
+  // pi-ai 只在 provider 明确是 cerebras 时才认这条，miro 拿不到 provider，自己兜住。
+  for (const message of [
+    "400 status code (no body)",
+    "413 status code (no body)",
+    "400 (no body)",
+    "413 (no body)",
+    "retry failed\n413 (no body)",
+  ]) {
+    assert.equal(isContextOverflowError(new Error(message)), true, message);
+  }
+  // 整行匹配：嵌在别的句子里的同样数字不能被当超窗。
+  assert.equal(isContextOverflowError(new Error("upstream said 400 status code (no body) for this key")), false);
 });
 
 test("包含 token 超限措辞的限流与服务不可用不会触发压缩", () => {

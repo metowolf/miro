@@ -1,6 +1,6 @@
 {
   "name": "miro-cli",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "A multi-agent ACP terminal client built with React + Ink",
   "type": "module",
   "bin": {

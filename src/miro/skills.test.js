@@ -179,18 +179,18 @@ test("frontmatter 上限按 UTF-8 字节计算", () => {
 // 扫描
 // ---------------------------------------------------------------------------
 
-test("default scan root order: user roots first, project roots next, explicit paths last", () => {
+test("default scan root order follows ascending priority, explicit paths last", () => {
   const roots = skillRoots({ cwd: "/repo", home: "/home/u", extraPaths: ["~/extra", "rel", "", 42] });
   assert.deepEqual(roots.map((root) => root.dir), [
-    "/home/u/.miro/skills",
     "/home/u/.agents/skills",
-    "/repo/.miro/skills",
+    "/home/u/.miro/skills",
     "/repo/.agents/skills",
+    "/repo/.miro/skills",
     "/home/u/extra",
     "/repo/rel",
   ]);
   assert.deepEqual(roots.map((root) => root.source), [
-    "user", "user-shared", "project", "project-shared", "path", "path",
+    "user-shared", "user", "project-shared", "project", "path", "path",
   ]);
 });
 
@@ -274,15 +274,20 @@ test("same-name skill is overridden by the later source and logs a collision dia
   assert.deepEqual(diagnostics.map((entry) => entry.code), ["name-collision"]);
 });
 
-test("project roots override all user roots", () => {
+test("same-name skills follow project miro > project agents > user miro > user agents", () => {
   const { home, cwd } = sandbox();
-  writeTree(join(home, ".miro", "skills"), { "pdf/SKILL.md": skillDoc("pdf", "User miro version.") });
-  writeTree(join(home, ".agents", "skills"), { "pdf/SKILL.md": skillDoc("pdf", "User shared version.") });
-  writeTree(join(cwd, ".miro", "skills"), { "pdf/SKILL.md": skillDoc("pdf", "Project miro version.") });
-
-  const { skills } = loadSkills({ cwd, home });
-  assert.equal(skills[0].description, "Project miro version.");
-  assert.equal(skills[0].source, "project");
+  const roots = [
+    [home, ".agents", "User shared version.", "user-shared"],
+    [home, ".miro", "User miro version.", "user"],
+    [cwd, ".agents", "Project shared version.", "project-shared"],
+    [cwd, ".miro", "Project miro version.", "project"],
+  ];
+  for (const [base, directory, description, source] of roots) {
+    writeTree(join(base, directory, "skills"), { "pdf/SKILL.md": skillDoc("pdf", description) });
+    const { skills } = loadSkills({ cwd, home });
+    assert.equal(skills[0].description, description);
+    assert.equal(skills[0].source, source);
+  }
 });
 
 test("invalid name or over-long description only warns and does not drop the skill", () => {

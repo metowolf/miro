@@ -137,18 +137,18 @@ function resolveRoot(value, { cwd, home }) {
 /**
  * 默认扫描的根目录，从低优先级到高优先级（后面的同名 skill 覆盖前面的）。
  *
- * - 只收 miro 自己的目录与跨 harness 的 `~/.agents/skills`，不去自动吃
+ * - 只收 miro 自己的目录与跨 harness 的 `.agents/skills`，不去自动吃
  *   `.claude/skills` / `.codex/skills`：目录内容会被拼进 system prompt，
  *   等于第三方 prompt 注入面。想共用就显式写进 settings 的 skills 数组。
- * - 项目级排在用户级之后：与 AGENTS.md 的拼装顺序一致（用户在前、项目在后），
- *   仓库里固定的同名 skill 能压过全局那份。
+ * - 默认优先级：项目 .miro > 项目 .agents > 用户 .miro > 用户 .agents。
+ *   显式路径仍排在默认根目录之后。
  */
 export function skillRoots({ cwd = process.cwd(), home = os.homedir(), extraPaths = [] } = {}) {
   const roots = [
-    { dir: path.join(home, ".miro", "skills"), source: "user" },
     { dir: path.join(home, ".agents", "skills"), source: "user-shared" },
-    { dir: path.join(cwd, ".miro", "skills"), source: "project" },
+    { dir: path.join(home, ".miro", "skills"), source: "user" },
     { dir: path.join(cwd, ".agents", "skills"), source: "project-shared" },
+    { dir: path.join(cwd, ".miro", "skills"), source: "project" },
   ];
   for (const entry of Array.isArray(extraPaths) ? extraPaths : []) {
     if (typeof entry !== "string" || entry.trim().length === 0) continue;
@@ -237,7 +237,7 @@ function addSkill(file, source, state) {
 
   const existing = state.skills.get(skill.name);
   if (existing != null) {
-    // 后面的来源更具体（项目 > 用户、显式路径 > 默认根），同名让它覆盖；
+    // 后面的来源优先级更高（项目 .miro > 项目 .agents > 用户 .miro > 用户 .agents；显式路径最高），同名让它覆盖；
     // 先 delete 再 set 是为了让它在目录里也排到最后，与来源顺序一致。
     state.skills.delete(skill.name);
     state.diagnostics.push(warn(

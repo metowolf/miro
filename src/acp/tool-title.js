@@ -219,6 +219,46 @@ function summarizeEditResult(info = {}) {
   return { lines: [`Wrote ${lines.length} ${lines.length === 1 ? "line" : "lines"}`], more: 0 };
 }
 
+function summarizeQuestionResult(info) {
+  const output = extractOutputText(info.rawOutput) || textContent(info.content);
+  let result;
+  try {
+    result = JSON.parse(output);
+  } catch {
+    return null;
+  }
+  if (!result?.answers || typeof result.answers !== "object" || Array.isArray(result.answers)) return null;
+  const questions = Array.isArray(info.rawInput?.questions) ? info.rawInput.questions : [];
+  const lines = [];
+  for (const [id, answer] of Object.entries(result.answers)) {
+    if (typeof answer !== "string" || !answer.trim()) continue;
+    const question = questions.find((item) => item?.id === id);
+    const title = question?.header || question?.question || id;
+    const notes = result.annotations?.[id]?.notes;
+    const summary = `${title}: ${answer}${typeof notes === "string" && notes.trim() ? ` (${notes})` : ""}`
+      .replace(/\s+/g, " ").trim();
+    lines.push(truncatePreviewLine(summary));
+  }
+  return lines.length > 0 ? { lines, more: 0 } : null;
+}
+
+/** 旧会话只存了 JSON 的首行预览，可从 detail 中恢复已提交的答案。 */
+export function restoreQuestionPreview(tool) {
+  if (tool?.label?.name !== "Question" ||
+      tool.preview?.lines?.length !== 1 || tool.preview.lines[0] !== "{" ||
+      typeof tool.detail?.output !== "string") return null;
+  let rawInput;
+  try {
+    rawInput = JSON.parse(tool.detail.input);
+  } catch {
+    return null;
+  }
+  return summarizeQuestionResult({
+    rawInput,
+    content: [{ type: "content", content: { type: "text", text: tool.detail.output } }],
+  });
+}
+
 /** Read 与普通工具单行摘要，execute 保留原有 shell 多行预览。 */
 export function summarizeToolResult(info = {}) {
   const isRead = info.kind === "read" || (info.kind == null && info.name === "Read");
@@ -228,6 +268,11 @@ export function summarizeToolResult(info = {}) {
   }
   const isEdit = info.kind === "edit" || (info.kind == null && info.name === "Edit");
   if (isEdit) return summarizeEditResult(info);
+
+  if (info.name === "request_user_input" || info.title === "Question") {
+    const summary = summarizeQuestionResult(info);
+    if (summary) return summary;
+  }
 
   const text = firstNonEmptyLine(extractOutputText(info.rawOutput) || textContent(info.content));
   return text ? { lines: [truncatePreviewLine(text)], more: 0 } : null;
@@ -258,6 +303,7 @@ function preferredDisplayName(name, kind, title) {
   const byKind = KIND_NAMES[kind] ?? "";
   const byTitle = typeof title === "string" ? title.trim() : "";
   if (wire && WIRE_TOOL_NAME.test(wire)) return byKind || byTitle || wire;
+  if (wire && byTitle && wire.toLowerCase() === byTitle.toLowerCase()) return byTitle;
   return wire || byKind || byTitle || "Tool";
 }
 
@@ -323,6 +369,16 @@ export function formatToolLabel(info) {
   const displayName = preferredDisplayName(name, kind, title);
 
   let args = "";
+  if (
+    (name === "request_user_input" || title === "Question") &&
+    Array.isArray(rawInput?.questions)
+  ) {
+    args = rawInput.questions
+      .map((question) => question?.question)
+      .filter((question) => typeof question === "string" && question.trim())
+      .join(" | ");
+  }
+
   const location = Array.isArray(locations) ? locations[0] : null;
   const pathArg = pickString(rawInput, PATH_KEYS);
   const commandArg = pickString(rawInput, COMMAND_KEYS);
@@ -330,16 +386,16 @@ export function formatToolLabel(info) {
   // 所以这里让 pattern 优先于 path。
   const preferCommand = kind === "search" && commandArg;
 
-  if (preferCommand) {
+  if (!args && preferCommand) {
     args = commandArg;
-  } else if (location && typeof location.path === "string" && location.path.length > 0) {
+  } else if (!args && location && typeof location.path === "string" && location.path.length > 0) {
     args = displayPath(location.path);
     if (typeof location.line === "number") args += `:${location.line}`;
-  } else if (pathArg) {
+  } else if (!args && pathArg) {
     args = displayPath(pathArg);
-  } else if (commandArg) {
+  } else if (!args && commandArg) {
     args = commandArg;
-  } else if (typeof title === "string" && title.trim() && title.trim() !== displayName) {
+  } else if (!args && typeof title === "string" && title.trim() && title.trim() !== displayName) {
     args = title.trim();
   }
 

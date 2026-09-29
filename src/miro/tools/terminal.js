@@ -19,7 +19,7 @@ import { stat } from "node:fs/promises";
 
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 
-import { RISK_LEVELS, RISK_LEVEL_DESCRIPTION } from "../risk-level.js";
+import { RISK_LEVELS, RISK_LEVEL_DESCRIPTION, RISK_REASON_DESCRIPTION } from "../risk-level.js";
 import { textContent, truncate } from "./shared.js";
 
 const EXECUTE_MAX_OUTPUT = 30_000;
@@ -35,6 +35,7 @@ const BASE_PARAMETERS = {
     enum: [...RISK_LEVELS],
     description: RISK_LEVEL_DESCRIPTION,
   },
+  risk_reason: { type: "string", description: RISK_REASON_DESCRIPTION },
   workdir: {
     type: "string",
     description: "Directory to run the command in, absolute or relative to the workspace (default: workspace root).",
@@ -51,7 +52,7 @@ export const TERMINAL_DEFINITION = {
   kind: "execute",
   title: "Terminal",
   description:
-    "Run a shell command in the workspace. Non-interactive; output is captured. Always set risk_level; read-only commands marked \"low\" run without interrupting the user for approval. Optional workdir avoids wrapping the command in cd; optional timeout_ms overrides the 120s default (clamped to 1s–10min). The host shell is used: there is no OS sandbox, so outbound network commands require approval.",
+    "Run a shell command in the workspace. Non-interactive; output is captured. Always set risk_level, and set risk_reason to justify it (required for \"high\"); read-only commands marked \"low\" run without interrupting the user for approval. Optional workdir avoids wrapping the command in cd; optional timeout_ms overrides the 120s default (clamped to 1s–10min). The host shell is used: there is no OS sandbox, so outbound network commands require approval.",
   parameters: {
     type: "object",
     properties: { ...BASE_PARAMETERS },

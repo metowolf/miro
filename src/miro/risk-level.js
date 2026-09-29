@@ -16,6 +16,24 @@ export function normalizeRiskLevel(value) {
   return RISK_LEVELS.includes(normalized) ? normalized : DEFAULT_RISK_LEVEL;
 }
 
+/** risk_reason 进入审查上下文前的长度上限，防止自述撑大审查投影。 */
+export const MAX_RISK_REASON_CHARS = 500;
+
+/**
+ * 归一化模型自报的风险理由：非字符串或空白返回 null，其余 trim 后截断。
+ * 与 risk_level 一样只降级不抛错。
+ */
+export function normalizeRiskReason(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > MAX_RISK_REASON_CHARS ? trimmed.slice(0, MAX_RISK_REASON_CHARS) : trimmed;
+}
+
+/** schema 里给模型的 risk_reason 说明。 */
+export const RISK_REASON_DESCRIPTION =
+  "One or two sentences explaining why risk_level was chosen. Required when risk_level is \"high\": state why the command must run and what it affects. Optional for low and medium. In Auto mode this is shown to the safety reviewer as an untrusted self-report.";
+
 /** schema 里给模型的等级说明。措辞要具体到命令类别，否则模型会一律报 low。 */
 export const RISK_LEVEL_DESCRIPTION = [
   "Your own assessment of command risk. In Auto mode, high-risk commands receive an isolated safety review; low and medium commands run directly.",

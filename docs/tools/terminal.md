@@ -28,6 +28,7 @@
 | --- | --- | --- | --- |
 | `command` | string | 是 | 要执行的 shell 命令。 |
 | `risk_level` | `low` / `medium` / `high` | 是 | 模型对自己这条命令的风险评估。 |
+| `risk_reason` | string | 否 | 为 `risk_level` 给出的一两句理由；`high` 时应说明为什么必须执行及影响范围。会去除首尾空白并截断到 500 字符，空白视为未填。 |
 | `workdir` | string | 否 | 执行目录，绝对路径或相对工作区，默认工作区根目录。 |
 | `timeout_ms` | integer | 否 | 超时毫秒数，默认 120 000，会被夹到 1 000–600 000。 |
 
@@ -87,7 +88,8 @@ Auto 的判定只看结构化参数，不看 `command` 文本：
    理由作为工具结果返回下一轮模型，不弹人工审批。
 
 因此 `rm`、`curl`、重定向、解释器与 heredoc 都没有特殊词法规则；Auto 信任模型填写的
-`risk_level`，实际能力边界交给 OS 沙箱。`allowedDomains` 仍由 sandbox runtime 在执行层
+`risk_level`，实际能力边界交给 OS 沙箱。`risk_reason` 不参与判定，只作为不可信的自述
+随 `proposedAction.riskReason` 交给审查模型参考，审查模型不得仅凭它放行。`allowedDomains` 仍由 sandbox runtime 在执行层
 强制为本次调用配置网络 allowlist。
 
 Manual 不做命令分类：所有 `terminal` 调用都请求用户确认。会话授权绑定完整命令、工作目录、

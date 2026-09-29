@@ -38,7 +38,7 @@
   - `auto`（默认）：不弹审批框。非 Terminal 工具直接执行；Terminal 仅在 `risk_level: high`
     或 `sandbox: false` 时交给隔离审查模型，无法明确批准就直接拒绝并把理由回灌给主模型。
     审查结论跟着工具行走（`Auto safety review: blocked · <理由>`），被拦下时理由必须留在
-    界面上，否则用户只看到命令没跑。
+    界面上，否则用户只看到命令没跑。可选的 `risk_reason` 只作为不可信自述交给审查模型参考。
   - `manual`：所有写入、删除、移动与命令都需审批；读、搜索、任务更新直接执行。
 - **并行**：`CONCURRENCY_SAFE_KINDS` = `read`、`search`、`tasks`、`goal`。
 - **抢跑**：`spawn`、`input`、`plan` 不抢跑，避免子智能体或模态交互与流式正文竞争。

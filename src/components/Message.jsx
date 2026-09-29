@@ -186,7 +186,14 @@ function ToolMessage({ block, reviewHint, width }) {
             {/* 展开成块时标题后面接命令首行，计时随命令末行走，不再钉在这里。 */}
             {showCommand ? ` ${commandRows[0]}` : ""}
             {group?.summary ? <Text dimColor> · {group.summary}</Text> : null}
-            {showDiff ? <Text dimColor> · +{diff.additions ?? 0} -{diff.deletions ?? 0}</Text> : null}
+            {showDiff ? (
+              <>
+                <Text dimColor> · </Text>
+                <Text color="green">+{diff.additions ?? 0}</Text>
+                <Text> </Text>
+                <Text color="red">-{diff.deletions ?? 0}</Text>
+              </>
+            ) : null}
             {!showCommand && elapsedText ? <Text dimColor> ({elapsedText})</Text> : null}
             {reviewHint ? <Text dimColor> · ctrl+o to review</Text> : null}
           </Text>

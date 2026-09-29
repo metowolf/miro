@@ -25,10 +25,11 @@ test("the command tool is called terminal in both modes, and only its parameters
   }
 
   // 非沙箱：就是宿主 shell，没有沙箱参数可传。
-  assert.deepEqual(commandParameterNames(false), ["command", "risk_level", "workdir", "timeout_ms"]);
+  assert.deepEqual(commandParameterNames(false), ["command", "risk_level", "risk_reason", "workdir", "timeout_ms"]);
   assert.deepEqual(commandParameterNames(true), [
     "command",
     "risk_level",
+    "risk_reason",
     "workdir",
     "timeout_ms",
     "allowedDomains",

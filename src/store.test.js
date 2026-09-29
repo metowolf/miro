@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { useStore, setRecorder } from "./store.js";
+import { renderTranscript } from "./export.js";
 
 function resetStore() {
   useStore.setState({
@@ -274,6 +275,59 @@ test("tool preview is finalized into the transcript block", () => {
   assert.equal(toolBlock.tool.preview.more, 0);
 });
 
+test("Question answers survive tool finalization and transcript export", () => {
+  resetStore();
+  useStore.getState().startTurn("prompt");
+  useStore.getState().upsertTool({
+    kind: "tool_call",
+    toolCallId: "question-1",
+    name: "request_user_input",
+    toolKind: "input",
+    title: "Question",
+    rawInput: { questions: [
+      { id: "language", header: "语言", question: "用哪种语言？" },
+      { id: "form", header: "形式", question: "需要什么形式？" },
+    ] },
+    status: "pending",
+  });
+  useStore.getState().upsertTool({
+    kind: "tool_call_update",
+    toolCallId: "question-1",
+    status: "completed",
+    content: textContent(JSON.stringify({ answers: {
+      language: "C (gcc)", form: "单文件随机对拍",
+    } }, null, 2)),
+  });
+  useStore.getState().endTurn();
+
+  const transcript = renderTranscript(useStore.getState().blocks);
+  assert.match(transcript, /Question\(用哪种语言？ \| 需要什么形式？\)/);
+  assert.match(transcript, /语言: C \(gcc\)/);
+  assert.match(transcript, /形式: 单文件随机对拍/);
+  assert.doesNotMatch(transcript, /\n    \{/);
+});
+
+test("hydrating an older Question block restores answers from saved detail", () => {
+  resetStore();
+  const item = {
+    label: { name: "Question", args: "用哪种语言？" },
+    preview: { lines: ["{"], more: 0 },
+    detail: {
+      input: JSON.stringify({ questions: [{ id: "lang", header: "语言" }] }),
+      output: JSON.stringify({ answers: { lang: "C (gcc)" } }, null, 2),
+    },
+  };
+  useStore.getState().hydrate([{ role: "tool", text: "Question(用哪种语言？)", tool: {
+    ...item,
+    reviewItems: [item],
+  } }]);
+
+  const block = useStore.getState().blocks[0];
+  assert.deepEqual(block.tool.preview.lines, ["语言: C (gcc)"]);
+  assert.deepEqual(block.tool.reviewItems[0].preview.lines, ["语言: C (gcc)"]);
+  assert.match(renderTranscript([block]), /语言: C \(gcc\)/);
+});
+
 test("Read result is finalized as a line-count summary", () => {
   resetStore();
   useStore.getState().startTurn("prompt");
@@ -481,7 +535,7 @@ test("miro wire-format tool names render the same display name as the ACP path",
     .getState()
     .blocks.filter((block) => block.role === "tool")
     .flatMap((block) => block.tool.group?.items.map((item) => item.label.name) ?? [block.tool.label.name]);
-  assert.deepEqual(names, ["Bash", "Read", "terminal", "Write plan"]);
+  assert.deepEqual(names, ["Bash", "Read", "Terminal", "Write plan"]);
 });
 
 test("falls back to the wire-format tool name when no display name is available", () => {

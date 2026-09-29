@@ -11,6 +11,7 @@ import {
   extractToolPreview,
   buildToolDetail,
   formatToolLabel,
+  restoreQuestionPreview,
   summarizeToolResult,
   TERMINAL_STATUSES,
 } from "./acp/tool-title.js";
@@ -1029,7 +1030,16 @@ export const useStore = create((set, get) => ({
       let next = state;
       for (const block of historyBlocks) {
         if (!block || block.role === "banner") continue;
-        next = appendBlock(next, block, false);
+        const preview = block.role === "tool" ? restoreQuestionPreview(block.tool) : null;
+        const restored = preview
+          ? { ...block, tool: {
+              ...block.tool,
+              preview,
+              reviewItems: block.tool.reviewItems?.map((item) =>
+                item.label?.name === "Question" ? { ...item, preview } : item),
+            } }
+          : block;
+        next = appendBlock(next, restored, false);
       }
       return next;
     }),

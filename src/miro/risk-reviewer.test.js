@@ -23,6 +23,35 @@ test("risk reviewer accepts only explicit JSON approval", async () => {
   assert.doesNotMatch(seen[0].messages[1].content, /secret system|SECRET_TOOL_RESULT/);
 });
 
+test("risk reviewer projects a normalized riskReason and defaults it to null", async () => {
+  const seen = [];
+  const stream = async function* (request) {
+    seen.push(request);
+    yield { type: "text", text: '{"decision":"block","reason":"no"}' };
+  };
+  const run = (rawInput) => reviewRisk({
+    stream,
+    requestOptions: { messages: [{ role: "user", content: "clean up" }] },
+    item: { name: "terminal", kind: "execute", rawInput },
+    decision: {},
+    cwd: "/workspace",
+  });
+  await run({ command: "rm -rf dist", risk_level: "high", risk_reason: `  ${"y".repeat(600)}  ` });
+  await run({ command: "rm -rf dist", risk_level: "high" });
+  const withReason = JSON.parse(seen[0].messages[1].content).proposedAction;
+  const withoutReason = JSON.parse(seen[1].messages[1].content).proposedAction;
+  assert.equal(withReason.riskReason.length, 500);
+  assert.equal(withoutReason.riskReason, null);
+});
+
+test("terminal schema exposes an optional risk_reason", async () => {
+  const { TERMINAL_DEFINITION, SANDBOX_TERMINAL_DEFINITION } = await import("./tools/terminal.js");
+  for (const definition of [TERMINAL_DEFINITION, SANDBOX_TERMINAL_DEFINITION]) {
+    assert.equal(definition.parameters.properties.risk_reason.type, "string");
+    assert.equal(definition.parameters.required.includes("risk_reason"), false);
+  }
+});
+
 test("review transcript keeps only user intent and assistant tool calls within its budget", () => {
   const { transcript, truncated } = projectReviewTranscript([
     { role: "system", content: "do not leak" },

@@ -11,10 +11,72 @@ import {
   commandText,
   extractToolOutputPreview,
   extractToolPreview,
+  formatToolLabel,
   summarizeReadResult,
   summarizeToolResult,
   TOOL_PREVIEW_MAX_LINES,
 } from "./tool-title.js";
+
+test("tool labels use the declared capitalization for single-word names", () => {
+  for (const [name, kind, title] of [
+    ["terminal", "execute", "Terminal"],
+    ["grep", "search", "Grep"],
+    ["glob", "search", "Glob"],
+  ]) {
+    assert.equal(formatToolLabel({ name, kind, title }).name, title);
+  }
+  assert.equal(formatToolLabel({ name: "read_file", kind: "read", title: "Read" }).name, "Read");
+  assert.equal(formatToolLabel({ name: "bash", kind: "execute", title: "Run command" }).name, "bash");
+});
+
+test("request_user_input tool labels summarize the question text", () => {
+  assert.deepEqual(
+    formatToolLabel({
+      name: "request_user_input",
+      kind: "input",
+      title: "Question",
+      rawInput: {
+        questions: [
+          { question: "Which approach should we use?" },
+          { question: "Which features should be included?" },
+        ],
+      },
+    }),
+    {
+      name: "Question",
+      args: "Which approach should we use? | Which features should be included?",
+    }
+  );
+});
+
+test("Question preview shows submitted answers instead of the JSON opening brace", () => {
+  const output = JSON.stringify({
+    answers: { language: "C (gcc)", form: "单文件随机对拍", detail: "随机基准三路划分" },
+    annotations: { detail: { notes: "保留原地排序" } },
+  }, null, 2);
+  assert.deepEqual(summarizeToolResult({
+    name: "request_user_input",
+    kind: "input",
+    title: "Question",
+    rawInput: { questions: [
+      { id: "language", header: "语言" },
+      { id: "form", header: "形式" },
+      { id: "detail", header: "细节" },
+    ] },
+    content: textContent(output),
+  }), {
+    lines: ["语言: C (gcc)", "形式: 单文件随机对拍", "细节: 随机基准三路划分 (保留原地排序)"],
+    more: 0,
+  });
+});
+
+test("Question cancellation keeps its existing text preview", () => {
+  assert.deepEqual(summarizeToolResult({
+    name: "request_user_input",
+    title: "Question",
+    content: textContent("The user cancelled the questions."),
+  }), { lines: ["The user cancelled the questions."], more: 0 });
+});
 
 function textContent(text) {
   return [{ type: "content", content: { type: "text", text } }];

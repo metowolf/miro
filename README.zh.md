@@ -263,7 +263,7 @@ miro 提供 `Auto` 与 `Manual` 两档，默认 `Auto`。`/permissions` 可直�
 | `auto` | 默认。全程不弹人工审批；非 Terminal 工具直接执行，Terminal 仅在 `risk_level: high` 或 `sandbox: false` 时由隔离模型自动审查 |
 | `manual` | 写入、编辑、删除、移动与命令需确认；读取、搜索和任务更新直接执行 |
 
-`Auto` 不解析 Terminal 命令文本，因此 `rm`、`curl`、重定向、解释器与 heredoc 都没有特殊规则；`low` 与 `medium` 直接执行。只有 `high` 或 `sandbox: false` 会把用户意图、此前工具调用与本次动作投影给隔离、无工具的分类器，绝不传入工具结果。分类器明确批准才执行；阻断、异常或不确定都直接拒绝并把理由交给下一轮模型，不会回退询问用户。工具行下会写明审查结论，被拦下时直接给出理由。
+`Auto` 不解析 Terminal 命令文本，因此 `rm`、`curl`、重定向、解释器与 heredoc 都没有特殊规则；`low` 与 `medium` 直接执行。只有 `high` 或 `sandbox: false` 会把用户意图、此前工具调用与本次动作（含模型可选填写、按不可信自述对待的 `risk_reason`）投影给隔离、无工具的分类器，绝不传入工具结果。分类器明确批准才执行；阻断、异常或不确定都直接拒绝并把理由交给下一轮模型，不会回退询问用户。工具行下会写明审查结论，被拦下时直接给出理由。
 
 ```bash
 miro --permission-mode auto

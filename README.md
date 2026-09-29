@@ -263,7 +263,7 @@ Miro offers `Auto` and `Manual`, with `Auto` as the default. `/permissions` sele
 | `auto` | Default. Never opens a user approval prompt. Non-Terminal tools run directly; Terminal is auto-reviewed only for `risk_level: high` or `sandbox: false` |
 | `manual` | Writes, edits, deletes, moves, and commands need approval; read, search, and task updates run directly |
 
-`Auto` does not parse Terminal command text, so `rm`, `curl`, redirection, interpreters, and heredocs have no special lexical rules; `low` and `medium` run directly. For `high` or `sandbox: false`, it projects user intent, earlier tool calls, and the proposed action to an isolated classifier with no tools, never tool results. Only an explicit approval runs the command. A block, error, or uncertain result is returned directly to the next model round without asking the user. The verdict shows on the tool row, and a block spells out the reviewer's reason there.
+`Auto` does not parse Terminal command text, so `rm`, `curl`, redirection, interpreters, and heredocs have no special lexical rules; `low` and `medium` run directly. For `high` or `sandbox: false`, it projects user intent, earlier tool calls, and the proposed action (including the model's optional `risk_reason`, treated as an untrusted self-report) to an isolated classifier with no tools, never tool results. Only an explicit approval runs the command. A block, error, or uncertain result is returned directly to the next model round without asking the user. The verdict shows on the tool row, and a block spells out the reviewer's reason there.
 
 ```bash
 miro --permission-mode auto

@@ -9,6 +9,7 @@ import { EDIT_FILE_DEFINITION, editFileTool } from "./edit-file.js";
 import { GLOB_DEFINITION, globTool } from "./glob.js";
 import { GREP_DEFINITION, grepTool } from "./grep.js";
 import { READ_FILE_DEFINITION, readTool } from "./read-file.js";
+import { MCP_CALL_DEFINITION, MCP_LIST_TOOLS_DEFINITION, mcpCallTool, mcpListToolsTool } from "./mcp.js";
 import {
   TERMINAL_DEFINITION,
   hostTerminalTool,
@@ -82,6 +83,8 @@ export const TOOL_DEFINITIONS = [
   TERMINAL_DEFINITION,
   GREP_DEFINITION,
   GLOB_DEFINITION,
+  MCP_LIST_TOOLS_DEFINITION,
+  MCP_CALL_DEFINITION,
   SPAWN_AGENT_DEFINITION,
   UPDATE_TASKS_DEFINITION,
   UPDATE_GOAL_DEFINITION,
@@ -157,6 +160,7 @@ export function createToolRunners({
   goal = null,
   sandboxManager = null,
   sandboxEnabled = false,
+  mcpRuntime = null,
   plan = null,
   requestPlanEntry = null,
   requestUserInput = null,
@@ -181,6 +185,10 @@ export function createToolRunners({
   }
   if (available.has("grep")) runners.grep = grepTool(cwd);
   if (available.has("glob")) runners.glob = globTool(cwd);
+  if (mcpRuntime?.enabled && !readOnlyShell) {
+    if (available.has("mcp_list_tools")) runners.mcp_list_tools = mcpListToolsTool(mcpRuntime);
+    if (available.has("mcp_call")) runners.mcp_call = mcpCallTool(mcpRuntime);
+  }
   if (available.has("spawn_agent") && subagent != null) {
     // 目标工具不进子智能体的白名单：schemas 与 runners 都按这份名单装配，
     // 少了这一步子智能体会看到 update_goal 却调不动，变成「Unknown tool」。

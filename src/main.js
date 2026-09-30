@@ -12,6 +12,16 @@ import { parseCliArgs } from "./cli.js";
 import { HELP } from "./config.js";
 import { errorMessage } from "./utils.js";
 
+if (process.argv[2] === "mcp") {
+  try {
+    const { runMcpCommand } = await import("./mcp-command.js");
+    process.exitCode = await runMcpCommand(process.argv.slice(3));
+  } catch (error) {
+    process.stderr.write(`miro mcp: ${errorMessage(error)}\n`);
+    process.exitCode = 1;
+  }
+} else {
+
 let options;
 try {
   options = parseCliArgs(process.argv.slice(2));
@@ -42,4 +52,5 @@ if (options.mode === "print") {
 } else {
   const { runTui } = await import("./tui.jsx");
   process.exitCode = await runTui(options);
+}
 }

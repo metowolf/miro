@@ -1,7 +1,7 @@
 import { Box, Text, useInput, useWindowSize } from "ink";
 import { useState } from "react";
 
-import { extractToolDiff } from "../acp/tool-diff.js";
+import { permissionReview, permissionTitle } from "../permission-review.js";
 import { DiffView, diffLineCount } from "./DiffView.jsx";
 
 const MAX_BODY_LINES = 5;
@@ -10,48 +10,6 @@ const MAX_VISIBLE_OPTIONS = 3;
 function windowStart(index, total, size) {
   if (total <= size) return 0;
   return Math.max(0, Math.min(index - Math.floor(size / 2), total - size));
-}
-
-function dialogTitle(toolCall) {
-  switch (toolCall?.kind) {
-    case "execute":
-      return "Bash command";
-    case "edit":
-      return "Edit file";
-    case "read":
-      return "Read file";
-    case "delete":
-      return "Delete file";
-    case "fetch":
-      return "Fetch";
-    case "plan":
-      return "Plan";
-    default:
-      return toolCall?.title || "Tool call";
-  }
-}
-
-function reviewText(toolCall) {
-  if (toolCall?.command) return String(toolCall.command);
-  if (toolCall?.rawInput != null) {
-    const input = toolCall.rawInput;
-    if (typeof input === "object") {
-      // 计划审批：正文是 markdown，直接展示。落到下面的 JSON.stringify 会把
-      // 整份计划变成一大坨带 \n 转义的单行文本，根本无法阅读。
-      if (typeof input.plan === "string") return input.plan;
-      const path = input.path ?? input.file_path ?? input.filePath ?? input.filename;
-      const body = input.patch ?? input.diff ?? input.content ?? input.new_content ?? input.newText;
-      if (typeof body === "string") {
-        return `${path ? `Path: ${path}\n\n` : ""}${body}`;
-      }
-    }
-    try {
-      return JSON.stringify(input, null, 2);
-    } catch {
-      return String(toolCall.rawInput);
-    }
-  }
-  return "";
 }
 
 /** 计划审批的配色与提问与写操作不同：它不是一个危险动作，而是一个决策点。 */
@@ -63,12 +21,8 @@ export function PermissionDialog({ toolCall, items, escapeValue, onResolve }) {
   const { rows = 24, columns = 80 } = useWindowSize();
   const [index, setIndex] = useState(0);
   const [scroll, setScroll] = useState(0);
-  const diff = extractToolDiff({
-    kind: toolCall?.kind,
-    rawInput: toolCall?.rawInput,
-    content: toolCall?.content,
-  });
-  const rawReview = reviewText(toolCall).replace(/\r\n?/g, "\n");
+  const { diff, text } = permissionReview(toolCall);
+  const rawReview = text.replace(/\r\n?/g, "\n");
   const allLines = rawReview ? rawReview.split("\n") : [];
   const planReview = isPlanReview(toolCall);
   // 计划通常比一个 diff 长得多，默认就要展开；折叠成 5 行等于让用户盲批。
@@ -116,7 +70,7 @@ export function PermissionDialog({ toolCall, items, escapeValue, onResolve }) {
     if (key.return) onResolve(items[index].value);
   });
 
-  const title = dialogTitle(toolCall);
+  const title = permissionTitle(toolCall);
   const accent = toolCall?.kind === "delete" ? "red" : planReview ? "cyan" : "yellow";
   const visibleSize = Math.min(items.length, MAX_VISIBLE_OPTIONS);
   const visibleStart = windowStart(index, items.length, visibleSize);

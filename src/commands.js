@@ -6,6 +6,7 @@ export const SLASH_COMMANDS = [
   { name: "model", aliases: [], description: "Select / switch model (/model [model] to set directly)" },
   { name: "effort", aliases: [], description: "Set effort level for model usage (/effort [level] to set directly)" },
   { name: "config", aliases: [], description: "View / change config options, incl. prompt language (/config [id] [value])" },
+  { name: "mcp", aliases: [], description: "Manage MCP servers (/mcp [list|trust|reconnect <server>])" },
   { name: "statusline", aliases: [], description: "Configure status line items, order, and colors (/statusline reset to restore defaults)" },
   { name: "thinking", aliases: [], description: "Set thinking display: compact, full, or hidden (/thinking [mode])" },
   { name: "permissions", description: "Set permission mode: Auto (default) or Manual (/permissions [mode])" },

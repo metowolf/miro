@@ -356,6 +356,13 @@ function pickString(input, keys) {
 export function formatToolLabel(info) {
   const { name, kind, title, rawInput, locations } = info ?? {};
 
+  // 固定 MCP 入口的 kind 用于权限与调度，不能据此把远端工具误标成 Bash。
+  if (name === "mcp_call" || name === "mcp_list_tools") {
+    const target = [rawInput?.server, name === "mcp_call" ? rawInput?.name : rawInput?.query]
+      .filter((value) => typeof value === "string" && value.length > 0).join(" / ");
+    return { name: name === "mcp_call" ? "MCP" : "MCP tools", args: truncate(target) };
+  }
+
   if (rawInput?.tool_call_name === "spawn_agent") {
     const agentName =
       (typeof rawInput.sub_content === "string" && rawInput.sub_content.trim()) ||

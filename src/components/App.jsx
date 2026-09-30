@@ -1,11 +1,13 @@
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AcpClient } from "../acp/acp-client.js";
 import { MiroAgentClient } from "../miro/agent-client.js";
+import { projectMcpTrust, trustProjectMcp, updateMcpServerSetting } from "../mcp-config.js";
+import { logoutMcp } from "../mcp-oauth.js";
 import { catalogKey } from "../miro/models-file.js";
 import { OAUTH_PROVIDERS } from "../miro/oauth-providers.js";
 import { formatElapsed } from "../miro/goal.js";
@@ -770,6 +772,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
         const options = params.options ?? [];
         const reject = options.find((option) => option.kind === "reject_once");
         const toolCall = {
+          name: params.toolCall?.name ?? null,
           title: params.toolCall?.title ?? null,
           kind: params.toolCall?.kind ?? null,
           rawInput: params.toolCall?.rawInput ?? null,
@@ -863,6 +866,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
         bin: provider.bin,
         args: provider.args,
         sessionMeta: provider.sessionMeta,
+        settings,
         recordRawThinking: initialThinkingSettings.recordRaw,
         ...common,
       });
@@ -2740,6 +2744,103 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     }
 
     const commandHandlers = {
+      mcp: async (args) => {
+        const client = clientRef.current;
+        if (!(client instanceof MiroAgentClient)) { store.push("system", "MCP manager is available with the built-in miro agent."); return; }
+        if (store.busy || store.switching) { store.push("system", "Wait for the current activity before changing MCP servers."); return; }
+        const [action, serverName] = args.trim().split(/\s+/, 2);
+        if (action && !["list", "trust", "reconnect"].includes(action) || action === "reconnect" && !serverName) {
+          store.push("system", "Usage: /mcp [list|trust|reconnect <server>]"); return;
+        }
+        store.setSwitching("Reloading MCP configuration…");
+        try { await client.reloadMcp(); }
+        catch (error) { if (client === clientRef.current && !client.closed) store.push("error", errorMessage(error)); return; }
+        finally { if (client === clientRef.current) store.setSwitching(null); }
+        if (client !== clientRef.current || client.closed) return;
+        const runtime = client.mcpRuntime;
+        for (const diagnostic of runtime.diagnostics) store.push("system", diagnostic);
+        if (action === "trust") {
+          const trust = projectMcpTrust(process.cwd());
+          if (!trust.exists) { store.push("system", `No project MCP file at ${trust.file}`); return; }
+          let configured = [];
+          try { configured = Object.entries(JSON.parse(readFileSync(trust.file, "utf8")).mcpServers ?? {}); } catch {}
+          store.setOverlay({ kind: "mcp-trust", title: `Trust MCP commands in ${trust.file}?`, searchable: false,
+            items: [...configured.map(([name, entry]) => ({ value: `show-${name}`, label: `${name}: ${entry.command ?? entry.url ?? "invalid"}`, disabled: true })),
+              { value: "trust", label: "Trust this file and load its servers" }, { value: "cancel", label: "Cancel" }],
+            resolve: (value) => { store.setOverlay(null); if (value !== "trust") return;
+              trustProjectMcp(process.cwd()); void client.reloadMcp().then(() => store.push("system", "Project MCP servers loaded.")).catch((error) => store.push("error", errorMessage(error))); },
+          });
+          return;
+        }
+        if (action === "reconnect" && serverName) {
+          void runtime.reconnect(serverName).then((result) => store.push("system", JSON.stringify(result))).catch((error) => store.push("error", errorMessage(error)));
+          return;
+        }
+        if (action && action !== "list") { store.push("system", "Usage: /mcp [list|trust|reconnect <server>]"); return; }
+        const servers = runtime.configured?.length ? runtime.configured : [...runtime.servers.values()];
+        const trust = projectMcpTrust(process.cwd());
+        if (servers.length === 0) { store.push("system", trust.exists && !trust.trusted ? `Project MCP config needs trust. Run /mcp trust. (${trust.file})` : "No MCP servers configured."); return; }
+        if (action === "list") {
+          const serverState = (server) => {
+            if (server.enabled === false) return "disabled";
+            return runtime.connections.get(server.name)?.connected ? "connected" : "disconnected";
+          };
+          store.push("system", servers.map((server) => `${server.name} (${server.type}, ${serverState(server)})`).join("\n"));
+          return;
+        }
+        store.setOverlay({ kind: "mcp", title: "MCP servers", searchable: false,
+          items: servers.map((server) => ({ value: server.name, label: `${server.name}  ${server.type}${server.enabled === false ? "  disabled" : ""}` })),
+          resolve: (name) => { store.setOverlay(null); if (!name) return;
+            const server = servers.find((entry) => entry.name === name);
+            const toggle = server.enabled === false
+              ? { value: "enable", label: "Enable" }
+              : { value: "disable", label: "Disable" };
+            // 带 Authorization 头的服务自己管凭据，登录/登出对它无意义。
+            const supportsOAuth = server.enabled !== false && server.type === "http" &&
+              !Object.keys(runtime.servers.get(name)?.headers ?? {}).some((key) => key.toLowerCase() === "authorization");
+            store.setOverlay({ kind: "mcp-action", title: `MCP ${name}`, searchable: false,
+              items: [
+                ...(server.enabled === false ? [] : [{ value: "tools", label: "Show tools" }, { value: "reconnect", label: "Reconnect" }]),
+                toggle,
+                ...(supportsOAuth ? [{ value: "login", label: "Sign in" }, { value: "logout", label: "Sign out" }] : []),
+              ],
+              resolve: (selected) => { store.setOverlay(null); if (!selected) return;
+                if (selected === "tools" || selected === "reconnect") {
+                  void (selected === "tools" ? runtime.listTools({ server: name }) : runtime.reconnect(name))
+                    .then((result) => store.push("system", JSON.stringify(result, null, 2))).catch((error) => store.push("error", errorMessage(error)));
+                } else if (selected === "login") {
+                  const isCurrent = () => client === clientRef.current && !client.closed;
+                  const loginOverlay = { kind: "mcp-login", title: `Signing in to MCP ${name}…`, searchable: false,
+                    items: [{ value: "cancel", label: "Cancel sign-in" }], escapeValue: null,
+                    resolve: () => { if (isCurrent()) client.cancel(); },
+                  };
+                  store.setSwitching("Signing in to MCP…");
+                  store.setOverlay(loginOverlay);
+                  void client.loginMcp(name, { print: (message) => { if (isCurrent()) store.push("system", message); } })
+                    .catch((error) => {
+                      if (!isCurrent()) return;
+                      if (error?.name === "AbortError") store.push("system", "MCP sign-in cancelled.");
+                      else store.push("error", errorMessage(error));
+                    }).finally(() => {
+                      if (!isCurrent()) return;
+                      store.setSwitching(null);
+                      if (useStore.getState().overlay === loginOverlay) store.setOverlay(null);
+                    });
+                } else if (selected === "logout") {
+                  logoutMcp(runtime.servers.get(name)); void runtime.reconnect(name).catch(() => {});
+                  store.push("system", `Signed out of MCP server ${name}.`);
+                } else {
+                  try {
+                    updateMcpServerSetting(server, "enabled", selected === "enable", process.cwd());
+                    void client.reloadMcp().then(() => store.push("system", `MCP ${name}: ${selected}`))
+                      .catch((error) => store.push("error", errorMessage(error)));
+                  } catch (error) { store.push("error", errorMessage(error)); }
+                }
+              },
+            });
+          },
+        });
+      },
       login: (args) => args ? store.push("system", "Usage: /login") : openLoginPicker(),
       init: (args) =>
         void sendPrompt(

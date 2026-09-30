@@ -141,6 +141,7 @@ export async function runHeadless(options, dependencies = {}) {
         bin: provider.bin,
         args: provider.args,
         sessionMeta: provider.sessionMeta,
+        settings,
         ...common,
       });
 

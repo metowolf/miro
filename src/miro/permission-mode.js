@@ -40,6 +40,10 @@ export function isManual(mode) {
  * 绑定目标路径，不能再只按工具名或首个命令词复用。
  */
 export function permissionScope({ name, kind, rawInput, cwd }) {
+  // MCP 的真实动作不能落入 Terminal 的空 command 作用域。
+  if (name === "mcp_call") {
+    return `${name}:${JSON.stringify({ server: rawInput?.server, name: rawInput?.name, arguments: rawInput?.arguments })}`;
+  }
   if (kind === "execute") {
     const command = typeof rawInput?.command === "string" ? rawInput.command.trim() : "";
     const workdir = resolveWorkdir(cwd, rawInput);

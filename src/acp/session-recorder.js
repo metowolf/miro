@@ -173,6 +173,13 @@ export class AcpSessionRecorder {
 }
 
 function omitConfigOptions(message) {
+  // MCP 配置中的 URL、args、env、headers 都可能含凭据；日志只留名称和类型。
+  // 不改写协议对象，实际发给 agent 的配置必须完整。
+  if (Array.isArray(message?.params?.mcpServers)) {
+    message = { ...message, params: { ...message.params, mcpServers: message.params.mcpServers.map((server) => ({
+      name: server?.name, type: server?.type ?? "stdio", configuration: "[redacted]",
+    })) } };
+  }
   // 配置快照体积大且频繁重复；只裁剪日志副本，保留协议事件与运行时配置。
   if (message?.result && Object.hasOwn(message.result, "configOptions")) {
     const { configOptions, ...result } = message.result;

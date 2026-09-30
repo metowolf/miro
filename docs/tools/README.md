@@ -15,6 +15,8 @@
 | `terminal` | `execute` | terminal | [terminal.md](./terminal.md) | `src/miro/tools/terminal.js`（`miro.sandbox.enabled` 只决定跑沙箱还是宿主 shell） |
 | `grep` | `search` | Grep | [grep.md](./grep.md) | `src/miro/tools/grep.js` |
 | `glob` | `search` | Glob | [glob.md](./glob.md) | `src/miro/tools/glob.js` |
+| `mcp_list_tools` | `search` | MCP tools | [mcp_list_tools.md](./mcp_list_tools.md) | `src/miro/tools/mcp.js`、`src/miro/mcp-runtime.js` |
+| `mcp_call` | `execute` | MCP 服务 / 工具 | [mcp_call.md](./mcp_call.md) | `src/miro/tools/mcp.js`、`src/miro/mcp-runtime.js` |
 | `spawn_agent` | `spawn` | Sub-agent | [spawn_agent.md](./spawn_agent.md) | `src/miro/tools/spawn-agent.js`、`src/miro/subagent-runner.js` |
 | `update_tasks` | `tasks` | Update tasks | [update_tasks.md](./update_tasks.md) | `src/miro/tools/update-tasks.js` |
 | `update_goal` | `goal` | Update goal | [update_goal.md](./update_goal.md) | `src/miro/tools/update-goal.js` |

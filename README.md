@@ -223,6 +223,43 @@ Use `/config sandbox on` or `/config sandbox off` to update this setting and swi
 
 `/model` and `/effort` choices are remembered per provider. Miro uses top-level `model` / `effort` in `settings.json`, and records the model as `provider/id`; an ACP provider uses its own `providers.<id>` entry. The `model` / `effort` entries inside `miro` are fallback defaults when the top-level preference is absent or unavailable. Miro's `Default` / `Plan` interaction mode is independent from its `Auto` / `Manual` permission mode; `Shift+Tab` cycles the interaction mode.
 
+### MCP
+
+Configure trusted servers in the top-level `mcpServers` object in `~/.miro/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "local-tools": {
+      "command": "node",
+      "args": ["/absolute/path/server.js"],
+      "env": { "SERVICE_TOKEN": "your-token" }
+    },
+    "remote-tools": {
+      "type": "http",
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer your-token" },
+      "connectTimeoutMs": 10000,
+      "timeoutMs": 60000
+    }
+  }
+}
+```
+
+Replace the sample paths, URLs and credentials with your server's values. Stdio launches `command` directly without a shell. HTTP uses Streamable HTTP, not legacy SSE. Use `${NAME}` to read credentials from environment variables in command, args, env, URL or headers. Add `"enabled": false` to skip a server. Timeouts are positive integer milliseconds: 10 seconds for connecting and 60 seconds for a request by default. These settings apply to the built-in agent only.
+
+Project servers go in `<cwd>/.miro/mcp.json` under the same `mcpServers` key and override global servers with the same name. Run `miro mcp trust` in a terminal, or `/mcp trust` in the TUI, after reviewing the file; editing it revokes trust. `miro mcp add <name> -- <command> [args...]`, `miro mcp add <name> --url <url>`, `miro mcp remove <name>` and `miro mcp list` manage servers; `--local` targets the project file. Restart or use `/mcp` to reload after changes. `/mcp` also shows server status, tools and sign-in actions.
+
+The built-in agent exposes only two MCP tools: `mcp_list_tools` discovers tools and their parameter schemas, and `mcp_call` invokes them. Remote tools are always discovered on demand, never declared as additional model tools. Connections are reused across turns and closed with the session. Tool-list notifications refresh cached schemas. Text, embedded text resources and structured JSON returned by tools use the normal output budget; resource links remain metadata only, and image, audio and binary blocks are represented by notices. Resource listing, URI templates, resource reading, Prompts and task-based execution are not supported.
+
+HTTP servers without an Authorization header can use OAuth. Run `miro mcp login <name>` or select Sign in under `/mcp`; credentials are stored in `~/.miro/mcp-auth.json`. Use `miro mcp logout <name>` or the TUI to remove them. The sign-in browser must reach the local callback port (default 8765; configurable with `oauth.callbackPort`). Press Esc or Ctrl+C in the TUI sign-in panel to cancel. Closing the session also cancels sign-in and releases the callback port; the complete OAuth flow has a three-minute timeout.
+
+Sign-in follows the server's `WWW-Authenticate` resource metadata URL. Scopes come from the authentication challenge or resource metadata (`scopes_supported`, with `resource_scopes` supported for compatible gateways), falling back to the saved client's registered scope. To override the requested scopes during sign-in, set a non-empty, space-separated string such as `"oauth": { "scope": "openid profile offline_access" }` on the HTTP server entry; use only scopes supported by that server. OAuth failures identify the stage and error code without printing token responses.
+
+**Only configure servers you trust.** Discovery may start local processes even in Manual mode. Actual MCP invocations require Manual approval scoped to the server, tool and complete arguments; non-interactive Manual runs deny them. Auto runs MCP calls without prompts or Terminal safety review. MCP is outside the Terminal sandbox. Cancelling or timing out does not guarantee that remote effects were undone; calls are never automatically replayed. Keep `settings.json` private; tool arguments and results are still session data.
+
+ACP sessions receive the trusted configured servers, but the external agent owns connections, permissions and OAuth. HTTP entries are skipped with a diagnostic unless the agent advertises support. Miro's ACP traffic log redacts MCP connection configuration; the external agent still receives the credentials and may keep its own logs.
+
 ### Skills
 
 Miro supports the `SKILL.md` convention (Agent Skills). Skills are discovered at startup from `<cwd>/.miro/skills`, `<cwd>/.agents/skills`, `~/.miro/skills`, and `~/.agents/skills`, in that priority order. Extra directories go in a top-level `skills` array in `~/.miro/settings.json`; `"skills": false` turns the feature off. A directory containing `SKILL.md` is one skill and is not scanned any deeper, while a bare `*.md` file counts only when its frontmatter has a `description`. When two skills share a name, the higher priority root wins (explicit paths take precedence over default roots), and the shadowed file is reported in the client's diagnostics.

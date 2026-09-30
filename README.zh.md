@@ -223,6 +223,43 @@ miro 用到的上游写在 `~/.miro/models.json`。打开 `/model` 会重新读�
 
 `/model` 与 `/effort` 的选择按提供方分别记忆。`miro` 使用 `settings.json` 顶层的 `model` / `effort`，其中 `model` 记为 `provider/id`；ACP 提供方则存在自己的 `providers.<id>` 条目里。`miro` 对象里的 `model` / `effort` 只在顶层偏好缺省或匹配不到时作为回退默认值。miro 的 `Default` / `Plan` 交互模式与 `Auto` / `Manual` 权限模式相互独立；`Shift+Tab` 循环交互模式。
 
+### MCP
+
+将可信服务写入 `~/.miro/settings.json` 顶层的 `mcpServers`：
+
+```json
+{
+  "mcpServers": {
+    "local-tools": {
+      "command": "node",
+      "args": ["/absolute/path/server.js"],
+      "env": { "SERVICE_TOKEN": "your-token" }
+    },
+    "remote-tools": {
+      "type": "http",
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer your-token" },
+      "connectTimeoutMs": 10000,
+      "timeoutMs": 60000
+    }
+  }
+}
+```
+
+请将示例路径、URL 和凭据替换为真实服务的值。Stdio 直接启动 `command`，不经过 shell；HTTP 使用 Streamable HTTP，不支持旧 SSE。command、args、env、URL 和 headers 中的 `${NAME}` 从环境变量读取。设置 `"enabled": false` 可停用服务。超时使用正整数毫秒，默认连接 10 秒、请求 60 秒；只适用于内置 agent。
+
+项目服务写在 `<cwd>/.miro/mcp.json` 的同名 `mcpServers` 字段中，同名时覆盖全局服务。审阅文件后通过终端的 `miro mcp trust` 或 TUI 的 `/mcp trust` 授权；文件变化会撤销信任。`miro mcp add <名称> -- <命令> [参数...]`、`miro mcp add <名称> --url <URL>`、`miro mcp remove <名称>` 和 `miro mcp list` 管理服务；`--local` 作用于项目文件。修改后重启或通过 `/mcp` 重新加载。`/mcp` 还可查看连接状态、工具列表与登录操作。
+
+内置 agent 只提供两个 MCP 工具：`mcp_list_tools` 发现工具及参数 schema，`mcp_call` 执行调用。远端工具统一按需发现，不再单独声明为模型工具。连接跨回合复用，会话关闭时清理；工具目录变化通知会刷新缓存。工具返回的文本、嵌入文本资源和结构化 JSON 复用工具输出预算；资源链接仅保留元数据，图片、音频及二进制块以说明代替。不支持资源列举、URI 模板、资源读取、Prompts 和任务型执行。
+
+没有 Authorization 请求头的 HTTP 服务可使用 OAuth。运行 `miro mcp login <名称>` 或在 `/mcp` 中选择 Sign in；凭据保存在 `~/.miro/mcp-auth.json`。`miro mcp logout <名称>` 或 TUI 选项可注销。浏览器必须能访问本机回调端口（默认 8765，可用 `oauth.callbackPort` 设置）。在 TUI 登录面板按 Esc 或 Ctrl+C 可取消；关闭会话同样会取消登录并释放回调端口，整个 OAuth 流程超时为三分钟。
+
+登录会采用服务端 `WWW-Authenticate` 指定的资源元数据地址。权限优先取认证挑战或资源元数据（`scopes_supported`，也兼容部分网关的 `resource_scopes`），缺省时回退到已保存客户端的注册权限。需要覆盖登录请求的权限时，在 HTTP 服务条目中设置非空、以空格分隔的字符串，例如 `"oauth": { "scope": "openid profile offline_access" }`；只填写该服务支持的权限。OAuth 失败会标明阶段和错误码，不打印令牌响应。
+
+**只配置可信服务。** 即使在 Manual 模式，发现工具也可能启动本地进程。实际 MCP 调用在 Manual 下需审批，授权绑定服务、工具和完整参数；非交互 Manual 会拒绝实际调用。Auto 不询问，也不对 MCP 执行 Terminal 安全审查。MCP 不受 Terminal 沙箱保护。取消或超时不代表远端副作用已撤销，调用不会自动重放。请妥善保管 `settings.json`；工具参数和结果仍属于会话数据。
+
+ACP 会话透传已信任的服务配置，但由外部 agent 管理连接、权限与 OAuth。外部 agent 未声明支持 HTTP 时，会提示并跳过 HTTP 条目。miro 的 ACP 流量日志会隐去 MCP 连接配置，但外部 agent 仍会收到真实凭据，并可能有自己的日志。
+
 ### Skill
 
 Miro 支持 `SKILL.md` 约定（Agent Skills）。启动时从 `<cwd>/.miro/skills`、`<cwd>/.agents/skills`、`~/.miro/skills`、`~/.agents/skills` 扫描，优先级依次递减；额外目录写进 `~/.miro/settings.json` 顶层的 `skills` 数组，`"skills": false` 则整体关闭。含 `SKILL.md` 的目录就是一个 skill，不再向下扫描；裸 `*.md` 文件只有在 frontmatter 里带 `description` 时才算。同名时优先级更高的根目录胜出（显式路径高于默认目录），被遮住的文件会记在 client 的诊断里。

@@ -99,6 +99,16 @@ test.beforeEach(() => {
   FakeClient.permission = false;
 });
 
+test("headless passes global MCP settings to the ACP client", async () => {
+  const out = capture();
+  const err = capture();
+  const deps = dependencies(out.stream, err.stream, []);
+  deps.settings = { mcpServers: { local: { command: "node", args: ["server.js"] } } };
+  const code = await runHeadless({ prompt: "question", outputFormat: "text", acp: "fake" }, deps);
+  assert.equal(code, 0);
+  assert.deepEqual(FakeClient.instances[0].options.settings, deps.settings);
+});
+
 test("text mode prints the final answer and records a resumable transcript", async () => {
   const out = capture();
   const err = capture();

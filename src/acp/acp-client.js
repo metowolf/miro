@@ -7,6 +7,7 @@ import * as acp from "@agentclientprotocol/sdk";
 import { APP_NAME, APP_VERSION, PROVIDERS } from "../config.js";
 import { normalizeSessionMeta } from "../providers.js";
 import { errorMessage } from "../utils.js";
+import { loadMcpServers, toAcpMcpServers } from "../mcp-config.js";
 import { AcpSessionRecorder, createRecordingTransform } from "./session-recorder.js";
 import { isSpawnAgentTool } from "./subagent.js";
 import {
@@ -42,6 +43,7 @@ export class AcpClient extends EventEmitter {
     resumeContext = null,
     recordRawThinking = false,
     mcpServers = [],
+    settings = null,
     sessionMeta = null,
   } = {}) {
     super();
@@ -54,7 +56,11 @@ export class AcpClient extends EventEmitter {
     // 恢复的会话里 AGENTS.md 已经在原会话注入过，再来一份只会让历史出现
     // 第二份同样的规则，所以直接当作已注入。
     this.contextSent = continueSessionId != null;
-    this.mcpServers = mcpServers;
+    const mcp = loadMcpServers(settings, cwd);
+    // 有全局配置或项目文件时以配置为准；显式传入的 mcpServers 只在两者都没有时兜底。
+    const hasConfiguredServers = settings?.mcpServers != null || mcp.trust.exists;
+    this.mcpServers = hasConfiguredServers ? toAcpMcpServers(mcp.servers) : mcpServers;
+    this.mcpDiagnostics = mcp.diagnostics;
     this.sessionMeta = normalizeSessionMeta(sessionMeta);
     this.proc = null;
     this.context = null;
@@ -132,6 +138,7 @@ export class AcpClient extends EventEmitter {
           });
           this.agentCapabilities = initialized.agentCapabilities ?? {};
           this.agentInfo = initialized.agentInfo;
+          this.negotiateMcpServers();
 
           const resumed = this.continueSessionId != null;
           if (resumed) {
@@ -234,6 +241,17 @@ export class AcpClient extends EventEmitter {
       sessionId: this.sessionId,
       resumed,
     };
+  }
+
+  /** 远程 transport 只有外部 agent 明确声明支持时才透传。 */
+  negotiateMcpServers() {
+    for (const diagnostic of this.mcpDiagnostics) this.emit("stderr", diagnostic);
+    this.mcpServers = this.mcpServers.filter((server) => {
+      if (server.type !== "http" && server.type !== "sse") return true;
+      if (this.agentCapabilities?.mcpCapabilities?.[server.type] === true) return true;
+      this.emit("stderr", `MCP ${JSON.stringify(server.name)} skipped: this ACP agent does not support ${server.type} transport.`);
+      return false;
+    });
   }
 
   /**

@@ -13,6 +13,9 @@ import { startBash } from "../bash.js";
 import { loadSessionBlocks } from "../session-store.js";
 import { readSystemSettings, writeSystemSettings } from "../settings-file.js";
 import { normalizeDisabledTools, saveDisabledTools } from "../settings.js";
+import { loadMcpServers } from "../mcp-config.js";
+import { loginMcp } from "../mcp-oauth.js";
+import { McpRuntime } from "./mcp-runtime.js";
 import { errorMessage } from "../utils.js";
 import { SYSTEM_PROMPT, compactContext, environmentPrompt, runAgentLoop } from "./agent-loop.js";
 import { isSummaryMessage } from "./compaction.js";
@@ -85,6 +88,9 @@ export class MiroAgentClient extends EventEmitter {
     this.interactive = interactive;
 
     this.settings = settings ?? readSystemSettings();
+    this.mcpRuntime = dependencies.mcpRuntime ?? new McpRuntime({
+      ...loadMcpServers(this.settings, this.cwd), cwd: this.cwd,
+    });
     this.modelsFile = dependencies.modelsFile === undefined ? MODELS_FILE : dependencies.modelsFile;
     this.credentialStore = dependencies.credentialStore ?? new MiroCredentialStore(dependencies.authFile);
     this.oauthModels = dependencies.oauthModels ?? createOAuthModels(this.credentialStore);
@@ -123,6 +129,7 @@ export class MiroAgentClient extends EventEmitter {
     this.suppressReplay = false;
     this.messages = [];
     this.abortController = null;
+    this.mcpLoginController = null;
     // 「总是允许 / 总是拒绝」按会话记忆。放在 client 而不是 runAgentLoop 里：
     // 每条用户输入都会新调一次循环，集合声明在循环内等于点过的「Allow always」
     // 下一轮就失效。换 client（/new、/resume、切 provider）时自然重新开始。
@@ -219,12 +226,48 @@ export class MiroAgentClient extends EventEmitter {
       this.agentInfo = { name: "Miro", version: "miro" };
       this.agentCapabilities = {};
       this.emit("progress", resumed ? "Preparing miro session…" : "Starting miro agent…");
+      for (const diagnostic of this.mcpRuntime.diagnostics ?? []) this.emit("stderr", diagnostic);
       this.emit("ready", this.sessionPayload(resumed));
       await this.done;
     } catch (error) {
       this.fail(error, `Miro agent failed: ${errorMessage(error)}`);
+    } finally {
+      await this.mcpRuntime.close();
     }
     return this.fatalError;
+  }
+
+  async reloadMcp() {
+    if (this.closed || this.abortController || this.mcpLoginController) throw new Error("Wait for an idle session before reloading MCP servers.");
+    // 只刷新 MCP 配置，不能覆盖本会话的模型、推理强度或权限偏好。
+    const settings = (this.dependencies.readSystemSettings ?? readSystemSettings)();
+    this.settings = { ...this.settings, mcpServers: settings.mcpServers };
+    const previous = this.mcpRuntime;
+    const runtime = new McpRuntime({ ...loadMcpServers(this.settings, this.cwd), cwd: this.cwd });
+    this.mcpRuntime = runtime;
+    await previous.close();
+    return runtime.listTools();
+  }
+
+  /** 登录属于会话，取消或关闭时连同回调监听与后续重连一起作废。 */
+  async loginMcp(name, options = {}) {
+    if (this.closed || this.abortController || this.mcpLoginController) throw new Error("Wait for an idle session before signing in to MCP.");
+    const runtime = this.mcpRuntime;
+    const config = runtime.servers.get(name);
+    if (!config) throw new Error(`Unknown MCP server: ${name}`);
+    const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+    signal.throwIfAborted();
+    this.mcpLoginController = controller;
+    try {
+      await (this.dependencies.loginMcp ?? loginMcp)(config, { ...options, signal });
+      signal.throwIfAborted();
+      const result = await runtime.reconnect(name, { signal });
+      signal.throwIfAborted();
+      return result;
+    } finally {
+      if (this.mcpLoginController === controller) this.mcpLoginController = null;
+    }
   }
 
   /** 首条消息固定是 system prompt；模式切换时原位更新，不能留下互相冲突的 system。 */
@@ -358,7 +401,7 @@ export class MiroAgentClient extends EventEmitter {
   /** 回合互斥由 client 保底，避免 UI 或脚本同时改写同一段历史。 */
   assertIdle() {
     if (this.closed) throw new Error("Session is closed");
-    if (this.abortController) throw new Error("Wait for the current operation to finish before starting another one");
+    if (this.abortController || this.mcpLoginController) throw new Error("Wait for the current operation to finish before starting another one");
   }
 
   checkpointContext() {
@@ -725,6 +768,7 @@ export class MiroAgentClient extends EventEmitter {
       streamCompletion: this.dependencies.streamCompletion,
       fetchImpl: this.dependencies.fetchImpl,
       toolSchemas: this.dependencies.toolSchemas,
+      mcpRuntime: this.mcpRuntime,
       // 子智能体的 model / effort 覆盖要按父会话的模型目录解析，只有 client 这层
       // 同时握着 config.models 与上游连接；循环层拿到的是一个纯函数。
       resolveSubagentRouting: (options) => this.resolveSubagentRouting(options),
@@ -840,6 +884,7 @@ export class MiroAgentClient extends EventEmitter {
     // 目标继续在跑。
     this.interruptGoalRun();
     this.abortController?.abort();
+    this.mcpLoginController?.abort();
   }
 
   /** 当前模型对应的上游连接；密钥在发请求时解析，好让 `!command` 每次取新值。 */
@@ -1056,6 +1101,8 @@ export class MiroAgentClient extends EventEmitter {
     this.closed = true;
     this.interruptGoalRun();
     this.abortController?.abort();
+    this.mcpLoginController?.abort();
+    void this.mcpRuntime.close();
     this.resolveDone();
     // 沙箱的网络桥是进程级资源，会话收尾必须显式交出：它是个活的子进程句柄，
     // 留着就让事件循环永远不空，退出路径只卸载 TUI 时终端会一直回不到 shell。

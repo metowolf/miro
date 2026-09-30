@@ -29,6 +29,11 @@ test("tool labels use the declared capitalization for single-word names", () => 
   assert.equal(formatToolLabel({ name: "bash", kind: "execute", title: "Run command" }).name, "bash");
 });
 
+test("MCP labels show the remote target instead of a Bash label", () => {
+  assert.deepEqual(formatToolLabel({ name: "mcp_call", kind: "execute", rawInput: { server: "docs", name: "lookup", arguments: {} } }), { name: "MCP", args: "docs / lookup" });
+  assert.deepEqual(formatToolLabel({ name: "mcp_list_tools", kind: "search", rawInput: { server: "docs", query: "search" } }), { name: "MCP tools", args: "docs / search" });
+});
+
 test("request_user_input tool labels summarize the question text", () => {
   assert.deepEqual(
     formatToolLabel({

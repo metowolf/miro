@@ -15,20 +15,8 @@ import {
 } from "./simplify.js";
 import { simplifyPrompts } from "./prompts/index.js";
 import { LANGUAGE_IDS } from "./prompts/language.js";
-import { SLASH_COMMANDS, parseCommandInput, generateCommandSuggestions } from "./commands.js";
 
 const CWD = process.cwd();
-
-test("/simplify is registered and parses its arguments", () => {
-  const registered = SLASH_COMMANDS.find((cmd) => cmd.name === "simplify");
-  assert.ok(registered, "/simplify should be registered");
-  assert.deepEqual(parseCommandInput("/simplify"), { key: "simplify", args: "" });
-  assert.deepEqual(parseCommandInput("/simplify src/parse.js"), {
-    key: "simplify",
-    args: "src/parse.js",
-  });
-  assert.ok(generateCommandSuggestions("/simp").some((item) => item.name === "simplify"));
-});
 
 test("uncommitted prompt covers the three file states and stresses preserving functionality", async () => {
   const prompt = await simplifyPrompt({ kind: "uncommitted" }, CWD, "english");

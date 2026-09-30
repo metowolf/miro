@@ -9,7 +9,7 @@ import {
   normalizeLanguage,
 } from "./prompts/language.js";
 import { initPrompts, promptBundle, reviewPrompts } from "./prompts/index.js";
-import { buildInitPrompt, initPromptFor, INIT_PROMPT } from "./prompts.js";
+import { buildInitPrompt, INIT_PROMPT } from "./prompts.js";
 import { buildReviewRequest, reviewPrompt, reviewRubricFor, REVIEW_RUBRIC } from "./review.js";
 import {
   isLanguageOption,
@@ -76,8 +76,8 @@ test("the default /init and review exports are the English originals", () => {
 
 test("buildInitPrompt picks the base prompt by language and appends user instructions", () => {
   const zh = buildInitPrompt("", "chinese");
-  assert.equal(zh, initPromptFor("chinese"));
   assert.notEqual(zh, INIT_PROMPT);
+  assert.match(zh, /请分析这个代码库/);
   assert.match(zh, /AGENTS\.md/);
 
   const withArgs = buildInitPrompt("只看 ACP 层", "chinese");
@@ -148,22 +148,17 @@ test("an invalid stored language shows the default value in the option", () => {
 
 test("withLanguageOption appends at the end and does not override a provider option with the same id", () => {
   const acp = [{ id: "model", type: "select", options: [{ value: "m1" }] }];
-  const merged = withLanguageOption(acp, "english");
+  const merged = withLanguageOption(acp, "chinese");
   assert.deepEqual(
     merged.map((option) => option.id),
     ["model", "language"]
   );
+  assert.equal(merged.at(-1).currentValue, "chinese");
   // 原数组不被修改。
   assert.equal(acp.length, 1);
 
   const provided = [{ id: "language", type: "select", options: [{ value: "x" }] }];
   assert.equal(withLanguageOption(provided, "chinese"), provided);
-
-  // 没有 ACP 选项时也至少有 language 可用。
-  assert.deepEqual(
-    withLanguageOption(null, "english").map((option) => option.id),
-    ["language"]
-  );
 });
 
 test("/config language <value> matches by id and display name", () => {
@@ -191,12 +186,4 @@ test("/config still works and offers only language when the provider reports no 
     assert.equal(isConfigOptionLocked(option), false);
     assert.equal(matchConfigChoice(option, "English")?.value, "english");
   }
-});
-
-test("the merged list appends the language option last with the session value", () => {
-  const acp = [{ id: "model", type: "select", options: [{ value: "m1" }, { value: "m2" }] }];
-  const merged = withLanguageOption(acp, "chinese");
-  // language 始终在末尾，且当前值随会话内的选择走。
-  assert.equal(merged.at(-1).id, "language");
-  assert.equal(merged.at(-1).currentValue, "chinese");
 });

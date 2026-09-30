@@ -177,18 +177,13 @@ function isExecutableFile(candidate) {
  *
  * 先探测再注入，是为了不让模型靠 `command -v` 试错：非 GitHub 仓库上 `gh`
  * 通常是缺的，提示词里不说，模型就会先跑一条注定失败的命令，白烧一轮往返。
- * pathEnv / suffixes / exists 可注入，测试因此不依赖运行机器的 PATH。
  */
-export function availableForgeClis({
-  pathEnv = process.env.PATH,
-  suffixes = CLI_SUFFIXES,
-  exists = isExecutableFile,
-} = {}) {
+export function availableForgeClis({ pathEnv = process.env.PATH } = {}) {
   const dirs = String(pathEnv ?? "")
     .split(path.delimiter)
     .filter((dir) => dir.length > 0);
   return FORGE_CLI_CANDIDATES.filter((name) =>
-    dirs.some((dir) => suffixes.some((suffix) => exists(path.join(dir, `${name}${suffix}`))))
+    dirs.some((dir) => CLI_SUFFIXES.some((suffix) => isExecutableFile(path.join(dir, `${name}${suffix}`))))
   );
 }
 

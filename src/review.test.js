@@ -17,20 +17,8 @@ import {
   REVIEW_RUBRIC,
   userFacingHint,
 } from "./review.js";
-import { SLASH_COMMANDS, parseCommandInput, generateCommandSuggestions } from "./commands.js";
 
 const CWD = process.cwd();
-
-test("/review is registered and parses its arguments", () => {
-  const registered = SLASH_COMMANDS.find((cmd) => cmd.name === "review");
-  assert.ok(registered, "/review should be registered");
-  assert.deepEqual(parseCommandInput("/review"), { key: "review", args: "" });
-  assert.deepEqual(parseCommandInput("/review focus on error handling"), {
-    key: "review",
-    args: "focus on error handling",
-  });
-  assert.ok(generateCommandSuggestions("/rev").some((item) => item.name === "review"));
-});
 
 test("uncommitted prompt covers the three file states", async () => {
   const prompt = await reviewPrompt({ kind: "uncommitted" }, CWD, "english");

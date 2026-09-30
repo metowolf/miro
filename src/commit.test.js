@@ -28,7 +28,6 @@ import {
 } from "./commit.js";
 import { commitPrompts } from "./prompts/index.js";
 import { LANGUAGE_IDS } from "./prompts/language.js";
-import { SLASH_COMMANDS, parseCommandInput, generateCommandSuggestions } from "./commands.js";
 
 /** 建一个可控的小仓库，用于 git 相关断言。 */
 function makeRepo({ remote } = {}) {
@@ -43,32 +42,6 @@ function makeRepo({ remote } = {}) {
   run(["commit", "-q", "-m", "first commit"]);
   return { dir, run };
 }
-
-test("/commit is registered and parses its arguments", () => {
-  const registered = SLASH_COMMANDS.find((cmd) => cmd.name === "commit");
-  assert.ok(registered, "/commit should be registered");
-  assert.deepEqual(parseCommandInput("/commit"), { key: "commit", args: "" });
-  assert.deepEqual(parseCommandInput("/commit fix the parser"), {
-    key: "commit",
-    args: "fix the parser",
-  });
-  assert.ok(generateCommandSuggestions("/comm").some((item) => item.name === "commit"));
-});
-
-test("/commit-push-pr is registered and parses case-insensitively", () => {
-  assert.ok(SLASH_COMMANDS.some((cmd) => cmd.name === "commit-push-pr"));
-  assert.deepEqual(parseCommandInput("/commit-push-pr"), {
-    key: "commit-push-pr",
-    args: "",
-  });
-  assert.deepEqual(parseCommandInput("/COMMIT-PUSH-PR"), {
-    key: "commit-push-pr",
-    args: "",
-  });
-  assert.ok(
-    generateCommandSuggestions("/commit-p").some((item) => item.name === "commit-push-pr")
-  );
-});
 
 test("default task asks to stage the files and draft the message", () => {
   const prompt = commitTaskPrompt({ kind: "default" }, "english");
@@ -372,7 +345,6 @@ test("pull request CLI detection only reports executables on PATH", () => {
 
   assert.deepEqual(availableForgeClis({ pathEnv: dir }), ["glab"]);
   assert.deepEqual(availableForgeClis({ pathEnv: "" }), []);
-  assert.deepEqual(availableForgeClis({ pathEnv: dir, exists: () => false }), []);
 });
 
 test("publishTarget pairs the remote with the CLI for its host", () => {

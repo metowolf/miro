@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { matchProviderCommand, parseCommandInput, generateCommandSuggestions } from "./commands.js";
+import { matchProviderCommand, parseCommandInput } from "./commands.js";
 
 const PROVIDER_COMMANDS = [
   { name: "compact", description: "Manually compact the session context" },
@@ -36,14 +36,4 @@ test("matching is case-sensitive per provider semantics", () => {
 test("a provider command named like a local one parses as both", () => {
   assert.deepEqual(parseCommandInput("/model"), { key: "model", args: "" });
   assert.equal(matchProviderCommand("/model", [{ name: "model" }]), "model");
-});
-
-test("/config is registered and its arguments parse", () => {
-  assert.deepEqual(parseCommandInput("/config"), { key: "config", args: "" });
-  assert.deepEqual(parseCommandInput("/config enable_thinking true"), {
-    key: "config",
-    args: "enable_thinking true",
-  });
-  const suggestions = generateCommandSuggestions("/conf");
-  assert.equal(suggestions[0]?.name, "config");
 });

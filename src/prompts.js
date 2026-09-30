@@ -13,11 +13,6 @@ import { readLanguageSetting } from "./settings-file.js";
 /** 默认语言（English）的 /init 提示词。 */
 export const INIT_PROMPT = initPrompts(DEFAULT_LANGUAGE).INIT_PROMPT;
 
-/** 取指定语言的 /init 基础提示词。 */
-export function initPromptFor(language) {
-  return initPrompts(language).INIT_PROMPT;
-}
-
 /**
  * 无参数返回该语言的原文；有参数则追加到末尾。
  * language 省略时读取 ~/.miro/settings.json 的 language 字段。

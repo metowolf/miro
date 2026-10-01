@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import os from "node:os";
 import process from "node:process";
+import { randomUUID } from "node:crypto";
 
 import {
   currentEffortName,
@@ -129,6 +130,8 @@ export class MiroAgentClient extends EventEmitter {
     this.suppressReplay = false;
     this.messages = [];
     this.abortController = null;
+    this.activeInputTurn = null;
+    this.appliedInputs = [];
     this.mcpLoginController = null;
     // 「总是允许 / 总是拒绝」按会话记忆。放在 client 而不是 runAgentLoop 里：
     // 每条用户输入都会新调一次循环，集合声明在循环内等于点过的「Allow always」
@@ -327,6 +330,7 @@ export class MiroAgentClient extends EventEmitter {
     }
     if (saved?.contextState?.messages?.length > 0) {
       this.messages = structuredClone(saved.contextState.messages);
+      this.appliedInputs = structuredClone(saved.contextState.appliedInputs ?? []);
       this.contextSent = saved.contextState.contextSent;
       this.ensureSystemPrompt();
       return true;
@@ -357,7 +361,7 @@ export class MiroAgentClient extends EventEmitter {
    * 跑一轮对话。首轮普通输入前置 AGENTS.md 上下文，语义与 AcpClient.prompt 一致：
    * 注入失败要还原标记，恢复的会话不再注入。
    */
-  async prompt(content, { injectContext = true } = {}) {
+  async prompt(content, { injectContext = true, inputId = null, displayText = null } = {}) {
     this.assertIdle();
     const blocks = typeof content === "string" ? [{ type: "text", text: content }] : content;
     const inject = injectContext && !this.contextSent;
@@ -370,19 +374,36 @@ export class MiroAgentClient extends EventEmitter {
       : [];
     this.ensureSystemPrompt();
     this.messages.push({ role: "user", content: this.promptText(blocks, prefix) });
+    if (inputId && !this.appliedInputs.some((input) => input.id === inputId)) {
+      this.appliedInputs.push({ id: inputId, text: textOf(blocks).join("\n\n"), display: displayText });
+    }
 
     const controller = new AbortController();
     this.abortController = controller;
+
+    const inputTurn = { id: randomUUID(), inputs: [], signal: controller.signal, goalWasActive: this.goal.isActive() };
+    this.activeInputTurn = inputTurn;
+    let outcome = null;
 
     try {
       const result = await runAgentLoop({
         messages: this.messages,
         config: this.loopConfig(),
-        handlers: this.loopHandlers(),
+        handlers: this.loopHandlers({
+          takePendingInputs: () => inputTurn.inputs.splice(0),
+          hasPendingInputs: () => inputTurn.inputs.length > 0,
+          onInputsApplied: (inputs) => {
+            this.appliedInputs.push(...inputs);
+            // 先保存完整上下文与确认，再通知 UI；崩溃恢复可补回尚未显示的用户消息。
+            this.checkpointContext();
+            for (const input of inputs) this.emit("input_applied", input);
+          },
+        }),
         signal: controller.signal,
         dependencies: this.loopDependencies(),
         goal: this.goal,
       });
+      outcome = result;
       return {
         stopReason: result.stopReason,
         ...(result.transition ? { transition: result.transition } : {}),
@@ -393,9 +414,41 @@ export class MiroAgentClient extends EventEmitter {
       if (this.closed || controller.signal.aborted) return { stopReason: "cancelled" };
       throw error;
     } finally {
+      if (this.activeInputTurn === inputTurn) this.activeInputTurn = null;
       this.checkpointContext();
       if (this.abortController === controller) this.abortController = null;
+      if (inputTurn.inputs.length > 0) {
+        const paused = controller.signal.aborted || !["end_turn", "mode_transition"].includes(outcome?.stopReason)
+          || inputTurn.goalWasActive && !this.goal.isActive();
+        if (paused && this.goal.isActive()) {
+          this.interruptGoalRun();
+          this.goal.pause("Paused with unapplied steering messages");
+        }
+        this.emit("input_returned", {
+          inputs: inputTurn.inputs.splice(0),
+          paused,
+        });
+      }
     }
+  }
+
+  steeringCapability() {
+    const turn = this.activeInputTurn;
+    return turn && !this.closed && !turn.signal.aborted
+      ? { available: true, turnId: turn.id }
+      : { available: false, reason: "Current operation does not accept steering" };
+  }
+
+  /** 同步接收，回合身份与入队之间没有 await，收尾不能抢走刚确认的输入。 */
+  steerInput({ id, turnId, content, display = null }) {
+    const capability = this.steeringCapability();
+    if (!capability.available || capability.turnId !== turnId) return { accepted: false, reason: capability.reason ?? "Turn has ended" };
+    const text = this.promptText(typeof content === "string" ? [{ type: "text", text: content }] : content, []);
+    if (!id || !text.trim()) return { accepted: false, reason: "Empty input" };
+    if (!this.activeInputTurn.inputs.some((input) => input.id === id) && !this.appliedInputs.some((input) => input.id === id)) {
+      this.activeInputTurn.inputs.push({ id, text, display });
+    }
+    return { accepted: true };
   }
 
   /** 回合互斥由 client 保底，避免 UI 或脚本同时改写同一段历史。 */
@@ -405,7 +458,10 @@ export class MiroAgentClient extends EventEmitter {
   }
 
   checkpointContext() {
-    this.emit("context_checkpoint", { messages: this.messages, contextSent: this.contextSent });
+    this.emit("context_checkpoint", {
+      messages: this.messages, contextSent: this.contextSent,
+      ...(this.appliedInputs.length ? { appliedInputs: this.appliedInputs } : {}),
+    });
   }
 
   /** /compact 是独立操作，不把命令当用户消息，也不自动续跑旧任务。 */

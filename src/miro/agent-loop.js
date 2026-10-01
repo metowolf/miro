@@ -582,13 +582,30 @@ export async function runAgentLoop({
       },
     });
 
+  // 只能在历史中的工具调用全部闭合后追加用户消息；不抢占流和已经启动的工具。
+  const goalWasActive = goal?.isActive?.() === true;
+  const applyPendingInputs = () => {
+    if (signal?.aborted || stopRequested) return false;
+    if (goalWasActive && (goal.blockIfOverBudget?.() != null || !goal.isActive())) return false;
+    const inputs = handlers.takePendingInputs?.() ?? [];
+    for (const input of inputs) messages.push({ role: "user", content: input.text });
+    if (inputs.length) {
+      observedUsed = Math.max(observedUsed, estimateMessagesTokens(messages, backend.estimateTokens));
+      handlers.onInputsApplied?.(inputs);
+    }
+    return inputs.length > 0;
+  };
+
   for (let round = 0; round < config.maxToolRounds; round += 1) {
     if (signal?.aborted) {
       cancelled = true;
       break;
     }
 
+    let overBudget = goal?.blockIfOverBudget?.() ?? null;
+
     // 这里只会看到完整的 assistant/tool 配对，保存后再压缩或发起下一次请求。
+    applyPendingInputs();
     handlers.onContextCheckpoint?.();
     // 主动阈值：发请求之前先看水位。放在这里而不是收到 usage 之后，是因为
     // usage 描述的是刚发出去那次请求 —— 等看到它再压，超窗的请求已经发过了。
@@ -597,6 +614,9 @@ export async function runAgentLoop({
       cancelled = true;
       break;
     }
+    overBudget ??= goal?.blockIfOverBudget?.() ?? null;
+    // 压缩也可能耗时；这期间到达的引导必须赶上接下来这次请求。
+    applyPendingInputs();
 
     // 目标提醒描述的是「当前目标状态」，与只读/压缩提醒同属环境状态类：
     // 每轮重算并只保留一份，过期的那份必须真的消失，否则模型会同时读到
@@ -612,7 +632,6 @@ export async function runAgentLoop({
     // 触顶时先给一轮宽限：注入一条「立刻停下、写总结」的提醒让模型自己收尾，
     // 比直接掐断更有用——用户至少能拿到一份进度说明。宽限用过就硬停。
     // blockIfOverBudget 只在目标仍为 active 且确实触顶时才返回快照。
-    const overBudget = goal?.blockIfOverBudget?.() ?? null;
     if (overBudget != null) {
       syncGoalNotice(messages, goal);
       if (hasNotice(messages, GOAL_BUDGET_STOP_REMINDER)) {
@@ -1200,6 +1219,15 @@ export async function runAgentLoop({
     }
 
     if (pending.length === 0) {
+      if (round + 1 < config.maxToolRounds && applyPendingInputs()) {
+        dropTransientNotices(messages);
+        emptyRounds = 0;
+        continue;
+      }
+      if (round + 1 >= config.maxToolRounds && (!goalWasActive || goal.isActive()) && handlers.hasPendingInputs?.()) {
+        dropTransientNotices(messages);
+        return { stopReason: "max_turns", cancelled: false, model: config.model };
+      }
       // 有正文、没有工具调用才是真的答完了。空响应走同一个出口会把「模型
       // 一个字都没说」显示成正常收尾，用户只看到一个 Done。
       if (text.length > 0) {

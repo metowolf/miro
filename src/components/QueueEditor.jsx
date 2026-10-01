@@ -10,9 +10,11 @@ function oneLine(item) {
 }
 
 /** 运行中消息队列：查看、原地编辑、删除及重排。 */
-export function QueueEditor({ onClose }) {
+export function QueueEditor({ onClose, onResume }) {
   const { rows = 24 } = useWindowSize();
   const items = useStore((state) => state.queuedInputs);
+  const pending = useStore((state) => state.pendingInputs);
+  const paused = useStore((state) => state.queuePaused);
   const update = useStore((state) => state.updateQueuedInput);
   const remove = useStore((state) => state.removeQueuedInput);
   const move = useStore((state) => state.moveQueuedInput);
@@ -25,9 +27,10 @@ export function QueueEditor({ onClose }) {
   useInputCursor(draftRowRef, draft == null ? null : stringWidth(draft));
 
   useEffect(() => {
-    if (items.length === 0) onClose();
+    if (items.length === 0 && pending.length === 0) onClose();
+    else if (items.length === 0) setIndex(0);
     else if (index >= items.length) setIndex(items.length - 1);
-  }, [items.length, index, onClose]);
+  }, [items.length, pending.length, index, onClose]);
 
   useInput((input, key) => {
     if (draft != null) {
@@ -41,6 +44,8 @@ export function QueueEditor({ onClose }) {
       return setDraft((value) => value + input.replace(/[\r\n]+/g, " "));
     }
     if (key.escape || (key.ctrl && input === "q")) return onClose();
+    if (input === "r" && paused) return onResume?.();
+    if (!items.length) return;
     if (key.upArrow && key.shift) {
       move(index, -1);
       return setIndex(Math.max(0, index - 1));
@@ -56,7 +61,7 @@ export function QueueEditor({ onClose }) {
     if (input === "x") return clear();
   });
 
-  const maxVisible = Math.max(3, rows - 7);
+  const maxVisible = Math.max(3, rows - 7 - Math.min(pending.length + 1, 4));
   const start = Math.max(0, Math.min(index - Math.floor(maxVisible / 2), items.length - maxVisible));
   return (
     <Box flexDirection="column" height={rows}>
@@ -64,6 +69,8 @@ export function QueueEditor({ onClose }) {
         <Text bold color="cyan">Queued messages</Text><Text dimColor> · {items.length}</Text>
       </Box>
       <Box flexDirection="column" flexGrow={1} paddingX={1}>
+        {pending.length ? <Text dimColor>Steering waiting for the current response and tools (read only)</Text> : null}
+        {pending.slice(0, 3).map((item) => <Text key={item.id} color="cyan" wrap="truncate-end">{oneLine(item)}</Text>)}
         {items.slice(start, start + maxVisible).map((item, offset) => {
           const itemIndex = start + offset;
           const active = itemIndex === index;
@@ -79,7 +86,7 @@ export function QueueEditor({ onClose }) {
         ) : null}
       </Box>
       <Box borderStyle="single" borderLeft={false} borderRight={false} paddingX={1}>
-        <Text dimColor>{draft != null ? "Enter save · Esc cancel edit" : "↑↓ select · Shift+↑↓ reorder · Enter/e edit · d delete · x clear · Ctrl+Q/Esc close"}</Text>
+        <Text dimColor>{draft != null ? "Enter save · Esc cancel edit" : `${paused ? "r resume sending · " : ""}↑↓ select · Shift+↑↓ reorder · Enter/e edit · d delete · x clear · Ctrl+Q/Esc close`}</Text>
       </Box>
     </Box>
   );

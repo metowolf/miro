@@ -19,6 +19,8 @@ function resetStore() {
     thinkingDisplay: "compact",
     planSignature: null,
     queuedInputs: [],
+    pendingInputs: [],
+    queuePaused: false,
     providerCommands: [],
     pendingBashContext: [],
     bashCard: null,
@@ -1195,6 +1197,41 @@ test("queued inputs preserve FIFO order", () => {
   assert.deepEqual(useStore.getState().takeQueuedInput(), { text: "first", display: null });
   assert.deepEqual(useStore.getState().takeQueuedInput(), { text: "second", display: null });
   assert.equal(useStore.getState().takeQueuedInput(), null);
+});
+
+test("steering receipts flush prior output once without restarting the turn", () => {
+  resetStore();
+  const store = useStore.getState();
+  store.startTurn("prompt");
+  const startedAt = useStore.getState().turnStartedAt;
+  store.appendChunk("prior response", "m1");
+  store.addPendingInput({ id: "s1", text: "guidance", display: "guidance" });
+  assert.equal(useStore.getState().blocks.length, 0);
+  store.applyInput({ id: "s1", text: "guidance", display: "guidance" });
+  store.applyInput({ id: "s1", text: "guidance", display: "guidance" });
+  const state = useStore.getState();
+  assert.deepEqual(state.blocks.map((block) => [block.role, block.text]), [["assistant", "prior response"], ["user", "guidance"]]);
+  assert.deepEqual(state.pendingInputs, []);
+  assert.equal(state.turnStartedAt, startedAt);
+  assert.equal(state.busy, true);
+  assert.match(renderTranscript(state.blocks), /guidance/);
+});
+
+test("returned steering pauses FIFO dispatch until explicit resume and keeps identity through editing", () => {
+  resetStore();
+  const store = useStore.getState();
+  const input = { id: "s1", text: "guidance", display: null };
+  store.queueInput("later");
+  store.addPendingInput(input);
+  store.returnInputs([input], true);
+  store.returnInputs([input], true);
+  assert.deepEqual(useStore.getState().pendingInputs, []);
+  assert.equal(store.takeQueuedInput(), null);
+  store.updateQueuedInput(0, "edited guidance");
+  store.resumeInputQueue();
+  assert.deepEqual(store.takeQueuedInput(), { id: "s1", text: "edited guidance", display: null });
+  assert.deepEqual(store.takeQueuedInput(), { text: "later", display: null });
+  assert.equal(store.takeQueuedInput(), null);
 });
 
 test("queued inputs keep the paste-collapsed display text", () => {

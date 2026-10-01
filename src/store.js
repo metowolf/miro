@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { normalizeInput } from "./input-delivery.js";
 
 import {
   createSubagentState,
@@ -688,6 +689,8 @@ export const useStore = create((set, get) => ({
   thinkingDisplay: DEFAULT_THINKING_DISPLAY_MODE,
   planSignature: null,
   queuedInputs: [],
+  pendingInputs: [],
+  queuePaused: false,
   providerCommands: [],
   pendingBashContext: [],
   bashCard: null,
@@ -924,26 +927,42 @@ export const useStore = create((set, get) => ({
       return same ? state : { goal: snapshot };
     }),
 
-  queueInput: (text, display = null) =>
-    set((state) => ({ queuedInputs: [...state.queuedInputs, { text, display }] })),
+  queueInput: (text, display = null, id = null) =>
+    set((state) => ({ queuedInputs: [...state.queuedInputs, { text, display, ...(id ? { id } : {}) }] })),
+  addPendingInput: (input) => set((state) => ({ pendingInputs: [...state.pendingInputs, normalizeInput(input)] })),
+  applyInput: (input) => set((state) => {
+    const next = { ...state, pendingInputs: state.pendingInputs.filter((item) => item.id !== input.id) };
+    if (state.blocks.some((block) => block.inputId === input.id)) return next;
+    return appendBlock(flushBeforeStandaloneBlock(next), {
+      role: "user", text: input.display ?? input.text, inputId: input.id, head: true,
+    });
+  }),
+  returnInputs: (inputs, paused) => set((state) => {
+    const ids = new Set(inputs.map((input) => input.id));
+    const queuedIds = new Set(state.queuedInputs.map((input) => input.id).filter(Boolean));
+    return {
+      pendingInputs: state.pendingInputs.filter((input) => !ids.has(input.id)),
+      queuedInputs: [...inputs.filter((input) => !queuedIds.has(input.id)).map(normalizeInput), ...state.queuedInputs],
+      queuePaused: state.queuePaused || paused,
+    };
+  }),
+  resumeInputQueue: () => set({ queuePaused: false }),
   replaceQueuedInputs: (items) =>
     set({
       queuedInputs: Array.isArray(items)
-        ? items.map((item) => ({
-            text: typeof item?.text === "string" ? item.text : "",
-            display: typeof item?.display === "string" ? item.display : null,
-          }))
+        ? items.map(normalizeInput)
         : [],
     }),
   updateQueuedInput: (index, text) =>
     set((state) => ({
       queuedInputs: state.queuedInputs.map((item, itemIndex) =>
-        itemIndex === index ? { text, display: null } : item
+        itemIndex === index ? { ...item, text, display: null } : item
       ),
     })),
   removeQueuedInput: (index) =>
     set((state) => ({
       queuedInputs: state.queuedInputs.filter((_, itemIndex) => itemIndex !== index),
+      ...(state.queuedInputs.length === 1 ? { queuePaused: false } : {}),
     })),
   moveQueuedInput: (index, direction) =>
     set((state) => {
@@ -955,8 +974,9 @@ export const useStore = create((set, get) => ({
       [queuedInputs[index], queuedInputs[target]] = [queuedInputs[target], queuedInputs[index]];
       return { queuedInputs };
     }),
-  clearQueuedInputs: () => set({ queuedInputs: [] }),
+  clearQueuedInputs: () => set({ queuedInputs: [], queuePaused: false }),
   takeQueuedInput: () => {
+    if (get().queuePaused) return null;
     const queue = get().queuedInputs;
     if (queue.length === 0) return null;
     set({ queuedInputs: queue.slice(1) });

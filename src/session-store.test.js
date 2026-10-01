@@ -5,6 +5,49 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+test("steering recovery reconciles receipts, repairs missing blocks and pauses unapplied input", () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "miro-steering-recovery-"));
+  try {
+    const script = String.raw`
+      import assert from "node:assert/strict";
+      import { SessionRecorder, loadSessionBlocks } from "./src/session-store.js";
+      const cwd = "/work/steering";
+      const recorder = new SessionRecorder({ sessionId: "steering", providerId: "miro", cwd });
+      const first = { id: "s1", text: "applied guidance", display: "applied guidance" };
+      const second = { id: "s2", text: "waiting guidance", display: null };
+      recorder.recordBlock({ role: "user", text: "original" });
+      recorder.recordUiState({ composer: { value: "", cursor: 0, pastes: [], nextPasteId: 1 },
+        queuedInputs: [{ text: "later", display: null }], pendingInputs: [first, second] });
+      const messages = [{ role: "user", content: "original" }, { role: "user", content: first.text }];
+      recorder.recordContextState({ messages, contextSent: true, appliedInputs: [first] });
+      const load = () => loadSessionBlocks("steering", cwd, "miro");
+      const recovered = load();
+      assert.equal(recovered.uiState.queuePaused, true);
+      assert.deepEqual(recovered.uiState.pendingInputs, []);
+      assert.deepEqual(recovered.uiState.queuedInputs, [second, { text: "later", display: null }]);
+      assert.equal(recovered.blocks.filter((block) => block.inputId === "s1").length, 1);
+      recorder.recordBlock({ role: "user", text: first.text, inputId: "s1" });
+      assert.equal(load().blocks.filter((block) => block.inputId === "s1").length, 1);
+      // 压缩重写历史后，确认仍独立保留，不能把旧引导重新排队。
+      recorder.recordContextState({ messages: [{ role: "system", content: "summary", miro_compaction: true }],
+        contextSent: true, appliedInputs: [first] });
+      assert.deepEqual(load().uiState, recovered.uiState);
+      assert.deepEqual(load().contextState.appliedInputs, [first]);
+      // 恢复发送后的确认也能清除过期 UI 快照里的相同 ID。
+      recorder.recordUiState(recovered.uiState);
+      recorder.recordContextState({ messages: [{ role: "user", content: second.text }],
+        contextSent: true, appliedInputs: [first, second] });
+      assert.deepEqual(load().uiState.queuedInputs, [{ text: "later", display: null }]);
+    `;
+    const result = spawnSync(process.execPath, ["-e", script], {
+      cwd: path.resolve(import.meta.dirname, ".."), env: { ...process.env, HOME: home }, encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("Plan mode state persists independently from visible blocks", () => {
   const home = mkdtempSync(path.join(os.tmpdir(), "miro-session-plan-"));
   try {

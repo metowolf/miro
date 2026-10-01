@@ -1,6 +1,7 @@
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -227,6 +228,7 @@ export const SCREEN_TAKEOVER_OVERLAYS = new Set(["review-browser", "queue-review
 export function composerIsHidden(connecting, overlayKind) {
   return (
     Boolean(connecting) ||
+    SCREEN_TAKEOVER_OVERLAYS.has(overlayKind) ||
     ["model", "effort", "config", "statusline", "permissions", "thinking"].includes(overlayKind)
   );
 }
@@ -325,9 +327,10 @@ function emptyComposerSnapshot() {
  * 因最新 mtime 抢走 /sessions 首位与无 id 的 --continue。
  * 已经写过状态的会话是例外——必须记录「清空」，否则旧草稿会在恢复时复活。
  */
-export function shouldRecordUiState({ composer, queuedInputs, alreadyRecorded }) {
+export function shouldRecordUiState({ composer, queuedInputs, pendingInputs, alreadyRecorded }) {
   if (alreadyRecorded) return true;
   if (queuedInputs?.length > 0) return true;
+  if (pendingInputs?.length > 0) return true;
   return Boolean(composer?.value) || (composer?.pastes?.size ?? 0) > 0;
 }
 
@@ -368,18 +371,19 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     }
     if (!recorderRef.current || !composerSnapshotRef.current) return;
     const composer = composerSnapshotRef.current;
-    const queuedInputs = useStore.getState().queuedInputs;
+    const { queuedInputs, pendingInputs, queuePaused } = useStore.getState();
     if (
       !shouldRecordUiState({
         composer,
         queuedInputs,
+        pendingInputs,
         alreadyRecorded: uiStateRecordedRef.current,
       })
     ) {
       return;
     }
     uiStateRecordedRef.current = true;
-    recorderRef.current.recordUiState({ composer, queuedInputs });
+    recorderRef.current.recordUiState({ composer, queuedInputs, pendingInputs, queuePaused });
   };
 
   const scheduleUiCheckpoint = () => {
@@ -399,6 +403,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     // 恢复出来的状态本身就来自文件，等价于「已写过」；全新会话则从未写过。
     uiStateRecordedRef.current = uiState != null;
     useStore.getState().replaceQueuedInputs(uiState?.queuedInputs ?? []);
+    useStore.setState({ pendingInputs: [], queuePaused: uiState?.queuePaused === true });
     setComposerSession({ key, snapshot });
   };
 
@@ -451,6 +456,8 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
   const toolRound = useStore((state) => state.toolRound);
   const providerCommands = useStore((state) => state.providerCommands);
   const queuedInputs = useStore((state) => state.queuedInputs);
+  const pendingInputs = useStore((state) => state.pendingInputs);
+  const queuePaused = useStore((state) => state.queuePaused);
   const bashCard = useStore((state) => state.bashCard);
   const modes = useStore((state) => state.modes);
   const providerName = useStore((state) => state.providerName);
@@ -472,7 +479,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
 
   useEffect(() => {
     scheduleUiCheckpoint();
-  }, [queuedInputs]);
+  }, [queuedInputs, pendingInputs, queuePaused]);
 
   useEffect(() => {
     if (overlay != null) setHelpOpen(false);
@@ -713,6 +720,17 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     });
 
     client.on("thought", queueThought);
+    client.on("input_applied", (input) => {
+      if (client !== clientRef.current) return;
+      flushQueuedThought();
+      useStore.getState().applyInput(input);
+      checkpointUiState();
+    });
+    client.on("input_returned", ({ inputs, paused }) => {
+      if (client !== clientRef.current) return;
+      useStore.getState().returnInputs(inputs, paused);
+      checkpointUiState();
+    });
     client.on("plan", (entries) => {
       flushQueuedThought();
       useStore.getState().setPlan(entries);
@@ -2615,7 +2633,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
   // isolated：/review、/commit、/init 这类命令型任务在独立上下文里执行，过程不
   // 进主会话历史（见 MiroAgentClient.promptIsolated）。只有 miro 支持这个，
   // ACP 的对话历史在 provider 进程里，那里静默回退成普通回合。
-  const sendPrompt = async (content, displayText, { raw = false, injectContext = !raw, isolated = false } = {}) => {
+  const sendPrompt = async (content, displayText, { raw = false, injectContext = !raw, isolated = false, inputId = null } = {}) => {
     const store = useStore.getState();
     if (store.busy) {
       store.push("system", "Please wait for the current operation to finish.");
@@ -2625,7 +2643,8 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
       store.push("system", "Not connected to an ACP provider. Restart with --acp <provider-id>.");
       return;
     }
-    store.push("user", displayText);
+    if (inputId) store.applyInput({ id: inputId, text: displayText });
+    else store.push("user", displayText);
     store.startTurn("prompt");
     const bashContext = raw ? [] : store.takeBashContext();
     const blocks = typeof content === "string" ? [{ type: "text", text: content }] : content;
@@ -2639,7 +2658,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     try {
       result = detach
         ? await client.promptIsolated(payload, { displayText, injectContext })
-        : await client.prompt(payload, { injectContext });
+        : await client.prompt(payload, { injectContext, inputId, displayText });
     } catch (error) {
       if (bashContext.length > 0) store.restoreBashContext(bashContext);
       if (useStore.getState().cancelling) result = { stopReason: "cancelled" };
@@ -2695,6 +2714,8 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
 
   /** 按序发送排队输入。 */
   const drainQueue = () => {
+    const state = useStore.getState();
+    if (state.busy || state.status !== "ready" || state.switching || state.queuePaused || state.overlay?.kind === "queue-review") return;
     const client = clientRef.current;
     if (client?.goalSnapshot?.()?.status === "pausing" && typeof client.finishPauseGoal === "function") {
       client.finishPauseGoal();
@@ -2716,10 +2737,12 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
       }
     }
     const queued = useStore.getState().takeQueuedInput();
-    if (queued != null) void handleSubmit(queued.text, queued.display);
+    if (queued != null) {
+      void handleSubmit(queued.text, queued.display, { intent: "dequeue", inputId: queued.id });
+    }
   };
 
-  const handleSubmit = async (raw, display) => {
+  const handleSubmit = async (raw, display, { intent = "submit", inputId = null } = {}) => {
     const store = useStore.getState();
     const submitted = prepareSubmittedInput(raw, display);
     if (!submitted) return;
@@ -2733,9 +2756,30 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
       // 退出指令不能排队：`exit` / `quit` 与 `/exit` 一样立即生效，否则用户看到的
       // 只是「输入被吞掉」，而它下一轮还会作为普通 prompt 发给模型。
       if (!parseCommandInput(text) && !bareExitCommand(text)) {
-        store.queueInput(content, shown);
+        const client = clientRef.current;
+        const capability = client?.steeringCapability?.();
+        if (intent === "submit" && !matchProviderCommand(text, store.providerCommands) && !store.cancelling && capability?.available && typeof client.steerInput === "function") {
+          const id = randomUUID();
+          const receipt = client.steerInput({ id, turnId: capability.turnId, content, display: transcriptText });
+          if (receipt.accepted) {
+            store.addPendingInput({ id, text: content, display: transcriptText });
+            checkpointUiState();
+            return;
+          }
+        }
+        store.queueInput(content, shown, randomUUID());
+        checkpointUiState();
+        if (intent === "submit") store.push("system", "This operation cannot accept steering; message queued for the next turn.");
         return;
       }
+    }
+
+    // 暂停的收件箱优先于新任务；用户须在 Ctrl+Q 中恢复发送或删除。
+    if (intent !== "dequeue" && !isBashInput(text) && !parseCommandInput(text) && !bareExitCommand(text) && store.queuedInputs.length > 0) {
+      store.queueInput(content, shown, randomUUID());
+      checkpointUiState();
+      if (!store.queuePaused) drainQueue();
+      return;
     }
 
     if (isBashInput(text)) {
@@ -2877,11 +2921,11 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     }
 
     if (matchProviderCommand(text, store.providerCommands)) {
-      await sendPrompt(text, shown ?? text, { raw: true });
+      await sendPrompt(text, shown ?? text, { raw: true, inputId });
       return;
     }
 
-    await sendPrompt(content, transcriptText);
+    await sendPrompt(content, transcriptText, { inputId });
   };
 
   useInput((input, key) => {
@@ -2945,11 +2989,12 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
       const store = useStore.getState();
       if (store.overlay?.kind === "queue-review") {
         store.setOverlay(null);
-      } else if (!store.overlay && store.queuedInputs.length > 0) {
+        drainQueue();
+      } else if (!store.overlay && (store.queuedInputs.length > 0 || store.pendingInputs.length > 0)) {
         store.setOverlay({
           kind: "queue-review",
           escapeValue: null,
-          resolve: () => useStore.getState().setOverlay(null),
+          resolve: () => { useStore.getState().setOverlay(null); drainQueue(); },
         });
       }
     }
@@ -2967,9 +3012,13 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
           onClose={() => useStore.getState().setOverlay(null)}
         />
       ) : overlay?.kind === "queue-review" ? (
-        <QueueEditor onClose={() => useStore.getState().setOverlay(null)} />
-      ) : (
-        <>
+        <QueueEditor
+          onClose={() => { useStore.getState().setOverlay(null); drainQueue(); }}
+          onResume={() => { useStore.getState().resumeInputQueue(); useStore.getState().setOverlay(null); checkpointUiState(); drainQueue(); }}
+        />
+      ) : null}
+      {/* 全屏审阅只隐藏活动区；Composer 保持挂载，返回后保留草稿与历史游标。 */}
+      <Box flexDirection="column" display={SCREEN_TAKEOVER_OVERLAYS.has(overlay?.kind) ? "none" : "flex"}>
       {bashCard ? <BashCard card={bashCard} /> : null}
       {pending ? <Message block={pending} /> : null}
       <ActivitySlot
@@ -3069,6 +3118,8 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
           disabled={overlay != null || switching != null}
           locked={modeSwitching || exiting}
           onSubmit={handleSubmit}
+          busy={busy}
+          canSteer={!cancelling && clientRef.current?.steeringCapability?.().available === true}
           onCycleMode={cycleMode}
           providerCommands={providerCommands}
           helpOpen={helpOpen}
@@ -3080,10 +3131,16 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
           controlsRef={composerControlsRef}
         />
 
+        {pendingInputs.length > 0 ? (
+          <Box paddingX={1} flexDirection="column">
+            <Text color="cyan">{pendingInputs.length} steering message{pendingInputs.length > 1 ? "s" : ""} waiting for the current response and tools</Text>
+            {pendingInputs.slice(0, 3).map((input) => <Text key={input.id} dimColor wrap="truncate-end">{String(input.display ?? input.text).replace(/\s+/g, " ")}</Text>)}
+          </Box>
+        ) : null}
         {queuedInputs.length > 0 ? (
           <Box paddingX={1}>
             <Text dimColor>
-              {queuedInputs.length} message{queuedInputs.length > 1 ? "s" : ""} queued · Ctrl+Q to review
+              {queuedInputs.length} message{queuedInputs.length > 1 ? "s" : ""} queued{queuePaused ? " · paused" : ""} · Ctrl+Q to review{queuePaused ? " and resume" : ""}
             </Text>
           </Box>
         ) : null}
@@ -3127,8 +3184,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
           hidden={statusLineIsHidden({ helpOpen, completionOpen, overlay })}
         />
       </Box>
-        </>
-      )}
+      </Box>
     </Box>
   );
 }

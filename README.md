@@ -120,20 +120,21 @@ Provider-specific slash commands advertised by ACP are forwarded as-is.
 
 `/commit-push-pr` reads the `origin` remote and picks the matching CLI: `gh` on GitHub, `glab` on GitLab, `tea` on Gitea or Forgejo. When that CLI is missing, unauthenticated, or the host has none at all (Bitbucket, an unrecognised self-hosted instance), it still commits and pushes, then reports the URL for opening the pull request by hand instead of inventing one. A repository with no `origin` remote stops after the local commit.
 
-While a turn is running, ordinary prompts are queued in FIFO order. Slash commands run immediately. `!command` is refused while busy.
+While a turn is running, Enter steers the built-in Miro agent and Tab queues a prompt for the next turn. Steering waits for the current model response and tools to finish, then continues the same task; pending steering stays visible until it enters the model history. Normal, Plan, and Goal conversations support steering. ACP, isolated workflows such as `/review` and `/commit`, and standalone compaction fall back to FIFO queuing. Unapplied steering after interruption, failure, or session recovery pauses sending: open Ctrl+Q and press `r` to resume, or edit/delete the messages. Slash commands keep their existing dispatch rules. `!command` is refused while busy.
 
 ## Shortcuts
 
 | Key | Action |
 |-----|--------|
-| Enter | Send the prompt |
+| Enter | Send the prompt; steer the current task while supported |
+| Tab | Queue a prompt while running; completion takes priority |
 | Shift+Enter | Insert a newline (Miro enables Kitty and xterm extended-key reporting; unsupported terminals still cannot distinguish it from Enter) |
 | `?` | Shortcut cheatsheet (empty composer) |
 | ↑ / ↓ | Input history or completion |
 | Ctrl+M | Select or switch model (needs a terminal that supports the kitty keyboard protocol, otherwise the key is the same as Enter) |
 | Shift+Tab | Cycle interaction mode (`Default` / `Plan`) |
 | Ctrl+O | Open the full-screen Review window: live and retained thinking, shell output, and tool details |
-| Ctrl+Q | Review, edit, reorder, or remove queued messages |
+| Ctrl+Q | Review pending steering and edit, reorder, or remove queued messages; `r` resumes paused sending |
 | Ctrl+L | Clear the terminal display (not the ACP session) |
 | Ctrl+C | Clear the input draft; on an empty input, cancel the turn and press again within 2 seconds to exit. Any normal exit — this one, `/exit`, or a bare `exit`/`quit` — prints a one-line session usage summary, e.g. `Stat ↑12.4k ↓2.1k  R84.3k W6.2k CH81.9%  $0.018`: ↑/↓ are the session totals of input and output tokens, `R`/`W` the cache read and write tokens (the segment is added once the session has a cache reading; the direction with no reading is shown as 0), `CH` the cache hit rate (read / (uncached input + read + write)), and the trailing amount the session cost (three decimals below one unit, four below a tenth of a cent — miro adds main-loop requests and compaction summaries, ACP uses the agent's cumulative `usage_update` cost). The line is omitted entirely when the provider never reported usage or cost |
 | Esc | Close shortcut help, or interrupt a running turn |

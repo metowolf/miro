@@ -28,6 +28,7 @@ import {
   generateFileSuggestions,
 } from "../file-suggestions.js";
 import { cloneInputSnapshot, getInputHistory } from "../input-history.js";
+import { submissionIntent } from "../input-delivery.js";
 import { createPickerRequest, pickerQueryState } from "./picker/picker-query.js";
 import { completionHint, completionViewport } from "./picker/picker-completion.js";
 import { truncatePathToCellWidth } from "./picker/picker-rows.js";
@@ -85,7 +86,7 @@ function packRows(costs, activeIndex, budget) {
 }
 
 /** 空输入时按 ? 展开的快捷键速查，替代输入框内的占位提示。 */
-function ShortcutHelp() {
+function ShortcutHelp({ busy, canSteer }) {
   return (
     <Box paddingX={1} gap={2}>
       <Box flexDirection="column" width={22}>
@@ -93,6 +94,8 @@ function ShortcutHelp() {
         <Text dimColor>/ for commands</Text>
         <Text dimColor>@ for file paths</Text>
         <Text dimColor>shift + enter newline</Text>
+        <Text dimColor>{busy ? canSteer ? "enter to steer" : "enter to queue" : "enter to send"}</Text>
+        <Text dimColor>tab to queue while running</Text>
       </Box>
       <Box flexDirection="column" width={32}>
         <Text dimColor>shift + tab to cycle mode</Text>
@@ -113,6 +116,8 @@ function ShortcutHelp() {
 export function Composer({
   disabled,
   locked = false,
+  busy = false,
+  canSteer = false,
   onSubmit,
   onCycleMode,
   providerCommands = [],
@@ -325,7 +330,7 @@ export function Composer({
 
   if (controlsRef) controlsRef.current = { hasDraft, clearDraft };
 
-  const submit = (text) => {
+  const submit = (text, intent = "submit") => {
     const display = String(text ?? "");
     const submittedPastes = pruneOrphanPastes(display, pastesRef.current);
     historyRef.current.record({
@@ -337,7 +342,7 @@ export function Composer({
     const expanded = expandPasteMarkers(display, submittedPastes);
     resetDraft();
     notifySnapshotChange();
-    onSubmit(expanded, expanded === display ? undefined : display);
+    onSubmit(expanded, expanded === display ? undefined : display, { intent });
   };
 
   const applyActiveFileSuggestion = () => {
@@ -569,6 +574,7 @@ export function Composer({
 
       if (key.tab) {
         if (isBashInput(currentValue) && !isFileMode) triggerBashPathCompletion();
+        else if (submissionIntent({ tab: true, busy, bash: isBashInput(currentValue) }) && currentValue.trim()) submit(currentValue, "queue");
         return;
       }
       if (key.escape || key.meta) return;
@@ -745,7 +751,10 @@ export function Composer({
           <Text dimColor wrap="truncate">Finding files… · Esc to dismiss</Text>
         </Box>
       ) : helpOpen ? (
-        <ShortcutHelp />
+        <ShortcutHelp busy={busy} canSteer={canSteer} />
+      ) : null}
+      {busy && !helpOpen && !showSuggestions && !fileQuery.pending ? (
+        <Box paddingX={1}><Text dimColor>{canSteer ? "Enter to steer · Tab to queue" : "Enter/Tab to queue · steering unavailable"}</Text></Box>
       ) : null}
     </Box>
   );

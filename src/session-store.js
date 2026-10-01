@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { projectDirectoryName } from "./acp/session-recorder.js";
 import { normalizePlanModeState } from "./miro/plan-mode.js";
+import { normalizeInput, recoverInputDelivery } from "./input-delivery.js";
 
 /**
  * 会话持久化：~/.miro/sessions/<cwd 拍平后的目录>/<acp|miro>/<sessionId>.jsonl
@@ -109,7 +110,7 @@ function normalizeQueuedInputs(value) {
   for (const item of value) {
     if (!isObject(item) || typeof item.text !== "string") return null;
     if (item.display != null && typeof item.display !== "string") return null;
-    normalized.push({ text: item.text, display: item.display ?? null });
+    normalized.push(normalizeInput(item));
   }
   return normalized;
 }
@@ -119,7 +120,13 @@ function normalizeUiState(state) {
   const composer = normalizeComposerSnapshot(state.composer);
   const queuedInputs = normalizeQueuedInputs(state.queuedInputs);
   if (!composer || !queuedInputs) return null;
-  return { composer, queuedInputs };
+  const pendingInputs = state.pendingInputs == null ? null : normalizeQueuedInputs(state.pendingInputs);
+  if (state.pendingInputs != null && (!pendingInputs || pendingInputs.some((input) => !input.id))) return null;
+  return {
+    composer, queuedInputs,
+    ...(pendingInputs ? { pendingInputs } : {}),
+    ...(state.queuePaused === true ? { queuePaused: true } : {}),
+  };
 }
 
 /** goal_state 是 miro 的运行时快照；宽松读取旧版本，严格排除畸形对象。 */
@@ -449,16 +456,21 @@ export class SessionRecorder {
     const serialized = messages.map((message) => JSON.stringify(message));
     let from = 0;
     while (from < serialized.length && serialized[from] === this.lastContextMessages[from]) from += 1;
-    if (from === serialized.length && from === this.lastContextMessages.length && state.contextSent === this.lastContextSent) return;
+    const appliedInputs = normalizeQueuedInputs(state.appliedInputs ?? []);
+    if (!appliedInputs || appliedInputs.some((input) => !input.id)) return;
+    const appliedKey = JSON.stringify(appliedInputs);
+    if (from === serialized.length && from === this.lastContextMessages.length && state.contextSent === this.lastContextSent && appliedKey === (this.lastAppliedInputs ?? "[]")) return;
     const entry = {
       type: "context_state", version: 1, at: Date.now(),
       revision: this.contextRevision + 1, baseRevision: this.contextRevision,
       from, messages: messages.slice(from), contextSent: state.contextSent,
+      ...(appliedInputs.length ? { appliedInputs } : {}),
     };
     if (!this.open() || !this.append(JSON.stringify(entry))) return;
     this.lastContextMessages = serialized;
     this.lastContextSent = state.contextSent;
     this.contextRevision = entry.revision;
+    this.lastAppliedInputs = appliedKey;
   }
 
   /** 会话文件是否已经开写：本进程内已建出，或恢复的会话原本就存在。 */
@@ -573,14 +585,17 @@ function parseSessionFile(file) {
       if (obj.from !== 0 && (obj.baseRevision !== contextRevision || obj.from > (contextState?.messages.length ?? 0))) continue;
       const messages = [...(contextState?.messages ?? []).slice(0, obj.from), ...obj.messages];
       if (!validContextMessages(messages)) continue;
-      contextState = { messages, contextSent: obj.contextSent };
+      const appliedInputs = normalizeQueuedInputs(obj.appliedInputs ?? []);
+      if (!appliedInputs || appliedInputs.some((input) => !input.id)) continue;
+      contextState = { messages, contextSent: obj.contextSent, ...(appliedInputs.length ? { appliedInputs } : {}) };
       contextRevision = obj.revision;
     }
   }
   if (!meta) return null;
   if (title != null) meta.title = title;
   if (model != null) meta.model = model;
-  return { meta, blocks, uiState, goalState, planModeState, contextState };
+  const recovered = recoverInputDelivery(uiState, contextState?.appliedInputs, blocks);
+  return { meta, blocks: recovered.blocks, uiState: recovered.uiState, goalState, planModeState, contextState };
 }
 
 function transcriptFiles(cwd) {

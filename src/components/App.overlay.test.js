@@ -8,7 +8,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cancelOverlay, statusLineIsHidden } from "./App.jsx";
+import { cancelOverlay, composerIsHidden, statusLineIsHidden } from "./App.jsx";
+
+test("全屏审阅隐藏 Composer 并保持它挂载", () => {
+  assert.equal(composerIsHidden(false, "queue-review"), true);
+  assert.equal(composerIsHidden(false, "review-browser"), true);
+  assert.equal(composerIsHidden(false, null), false);
+});
 
 test("picker 型 overlay 走 resolve(escapeValue)", () => {
   const seen = [];

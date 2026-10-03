@@ -10,16 +10,16 @@ import {
   modelConfigFrom,
   thinkingConfigFrom,
 } from "../acp/model.js";
-import { startBash } from "../bash.js";
-import { loadSessionBlocks } from "../session-store.js";
-import { readSystemSettings, writeSystemSettings } from "../settings-file.js";
-import { normalizeDisabledTools, saveDisabledTools } from "../settings.js";
-import { loadMcpServers } from "../mcp-config.js";
-import { loginMcp } from "../mcp-oauth.js";
-import { McpRuntime } from "./mcp-runtime.js";
+import { startBash } from "../terminal/bash.js";
+import { loadSessionBlocks } from "../session/session-store.js";
+import { readSystemSettings, writeSystemSettings } from "../config/settings-file.js";
+import { normalizeDisabledTools, saveDisabledTools } from "../config/settings.js";
+import { loadMcpServers } from "../mcp/mcp-config.js";
+import { loginMcp } from "../mcp/mcp-oauth.js";
+import { McpRuntime } from "../mcp/mcp-runtime.js";
 import { errorMessage } from "../utils.js";
 import { SYSTEM_PROMPT, compactContext, environmentPrompt, runAgentLoop } from "./agent-loop.js";
-import { isSummaryMessage } from "./compaction.js";
+import { isSummaryMessage } from "./context/compaction.js";
 import {
   GOAL_CONTINUATION_PROMPT,
   GOAL_ROUND_CAP_CONTINUATION_PROMPT,
@@ -33,7 +33,7 @@ import {
   normalizeEffortForModel,
   readMiroConfig,
   normalizeMiroProtocol,
-} from "./config-options.js";
+} from "./config/config-options.js";
 import {
   MODELS_FILE,
   catalogKey,
@@ -41,11 +41,11 @@ import {
   loadMiroModelCatalog,
   mergeModelCatalogs,
   resolveModelSecrets,
-} from "./models-file.js";
+} from "./config/models-file.js";
 import {
   DEFAULT_PERMISSION_MODE,
   normalizePermissionMode,
-} from "./permission-mode.js";
+} from "./permissions/permission-mode.js";
 import { expandSkillCommand, formatSkillsForPrompt, loadSkills, skillsFromSettings } from "./skills.js";
 import { shutdownSandbox } from "./tools/terminal.js";
 import {
@@ -54,8 +54,8 @@ import {
   normalizePlanModeState,
   planModePrompt,
 } from "./plan-mode.js";
-import { MiroCredentialStore, storedCredentialProviderIds } from "./credential-store.js";
-import { createOAuthModels, oauthCatalogForCredentialIds } from "./oauth-providers.js";
+import { MiroCredentialStore, storedCredentialProviderIds } from "./auth/credential-store.js";
+import { createOAuthModels, oauthCatalogForCredentialIds } from "./auth/oauth-providers.js";
 
 /**
  * Miro 内置 agent 的会话事件源。

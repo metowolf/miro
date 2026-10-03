@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyFileSuggestion, extractAtToken, fileSuggestionKey } from "../../file-suggestions.js";
+import { applyFileSuggestion, extractAtToken, fileSuggestionKey } from "../../input/file-suggestions.js";
 import { createPickerRequest, pickerQueryState } from "./picker-query.js";
 
 const items = [

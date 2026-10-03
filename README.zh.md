@@ -335,7 +335,7 @@ Plan 模式把调查与设计同实现分开。可通过 `/plan`、`/plan on` �
 
 ### 提示词语言
 
-`/config language English`（或 `en`、`en-us`）、`/config language Chinese`（或 `zh`、`zh-cn`、`中文`）或 `/config language Cantonese`（或 `yue`、`zh-hk`、`zh-yue`、`粤语`、`粵語`）用于设置 miro 内置工作流提示词（`/init`、`/review`、`/simplify`、`/commit` 与 `/commit-push-pr`）的语言，结果写入 `~/.miro/settings.json` 的 `language` 字段。默认英文，未知取值回落为英文。该设置不影响 ACP 会话配置与你自己发送的消息；提示词文本本身放在 `src/prompts/<language>/`，新增一门语言即新增一个目录。
+`/config language English`（或 `en`、`en-us`）、`/config language Chinese`（或 `zh`、`zh-cn`、`中文`）或 `/config language Cantonese`（或 `yue`、`zh-hk`、`zh-yue`、`粤语`、`粵語`）用于设置 miro 内置工作流提示词（`/init`、`/review`、`/simplify`、`/commit` 与 `/commit-push-pr`）的语言，结果写入 `~/.miro/settings.json` 的 `language` 字段。默认英文，未知取值回落为英文。该设置不影响 ACP 会话配置与你自己发送的消息；提示词文本本身放在 `src/commands/prompts/<language>/`，新增一门语言即新增一个目录。
 
 ### 状态栏
 

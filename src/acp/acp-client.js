@@ -4,12 +4,12 @@ import process from "node:process";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 
-import { APP_NAME, APP_VERSION, PROVIDERS } from "../config.js";
-import { normalizeSessionMeta } from "../providers.js";
+import { APP_NAME, APP_VERSION, PROVIDERS } from "../config/config.js";
+import { normalizeSessionMeta } from "../config/providers.js";
 import { errorMessage } from "../utils.js";
-import { loadMcpServers, toAcpMcpServers } from "../mcp-config.js";
+import { loadMcpServers, toAcpMcpServers } from "../mcp/mcp-config.js";
 import { AcpSessionRecorder, createRecordingTransform } from "./session-recorder.js";
-import { isSpawnAgentTool } from "./subagent.js";
+import { isSpawnAgentTool } from "../transcript/subagent.js";
 import {
   currentEffortName,
   currentModelName,

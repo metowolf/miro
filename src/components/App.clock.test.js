@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { isAwaitingInputOverlay, isClockRunning, refreshActiveGoal } from "./App.jsx";
-import { useStore } from "../store.js";
+import { useStore } from "../transcript/store.js";
 
 const activeGoal = (wallClockMs) => ({
   goalId: "goal_1",

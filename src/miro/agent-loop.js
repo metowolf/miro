@@ -21,7 +21,7 @@ import {
   splitForCompaction,
   validateCompactionAdmission,
   validateSummaryResult,
-} from "./compaction.js";
+} from "./context/compaction.js";
 import { GOAL_BUDGET_STOP_REMINDER } from "./goal.js";
 import {
   DEFAULT_LLM_REQUEST_TIMEOUT_MS,
@@ -30,13 +30,13 @@ import {
   piApiForProtocol,
   piProviderForProtocol,
   withRequestTimeout,
-} from "./llm-backend.js";
+} from "./llm/llm-backend.js";
 import {
   isAuto,
   permissionScope,
-} from "./permission-mode.js";
-import { reviewRisk as reviewRiskWithModel } from "./risk-reviewer.js";
-import { normalizeRiskLevel } from "./risk-level.js";
+} from "./permissions/permission-mode.js";
+import { reviewRisk as reviewRiskWithModel } from "./permissions/risk-reviewer.js";
+import { normalizeRiskLevel } from "./permissions/risk-level.js";
 import {
   CONFIRM_KINDS,
   MAX_PARALLEL_TOOL_CALLS,
@@ -54,9 +54,9 @@ import {
   DEFAULT_TOOL_RESULT_BUDGET,
   applyToolResultBudget,
   persistToolResult,
-} from "./tool-result-budget.js";
-import { logUsageDebug } from "./usage-debug.js";
-import { assemblyFingerprint, toolContextStats } from "./request-diagnostics.js";
+} from "./context/tool-result-budget.js";
+import { logUsageDebug } from "./diagnostics/usage-debug.js";
+import { assemblyFingerprint, toolContextStats } from "./diagnostics/request-diagnostics.js";
 
 /**
  * miro 的固定人格。

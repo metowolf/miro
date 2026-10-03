@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "main.js"), "utf8");
 
 /** 只允许入口静态依赖解析参数与打印帮助所需的最小集合。 */
-const ALLOWED_STATIC_IMPORTS = new Set(["node:process", "./cli.js", "./config.js", "./utils.js"]);
+const ALLOWED_STATIC_IMPORTS = new Set(["node:process", "./cli/cli.js", "./config/config.js", "./utils.js"]);
 
 function staticImports() {
   return [...source.matchAll(/^\s*import\s+(?:[^"'`]*?from\s+)?["']([^"']+)["']/gm)].map(
@@ -35,7 +35,7 @@ test("main.js only statically imports the minimal argument/help surface", () => 
 
 test("main.js loads the two app entry points on demand", () => {
   const dynamic = dynamicImports();
-  for (const specifier of ["./headless.js", "./tui.jsx"]) {
+  for (const specifier of ["./cli/headless.js", "./cli/tui.jsx"]) {
     assert.ok(dynamic.includes(specifier), `${specifier} should be reached through await import()`);
   }
 });

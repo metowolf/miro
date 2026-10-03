@@ -9,7 +9,7 @@
  *   spawn_agent，它压根看不到这个工具，也就无法再派生。
  * - 可选的 model / effort 覆盖走由调用方注入的 resolveSubagentRouting：
  *   模型目录与上游连接由 agent-client 持有，这里不重复一套解析逻辑。
- * - 中间过程以 JSONL 快照增量上报，格式由 src/acp/subagent.js 的
+ * - 中间过程以 JSONL 快照增量上报，格式由 src/transcript/subagent.js 的
  *   updateSubagentState 定义（追加式全量重发，只解析新增后缀）。
  *   这样 store.js 与 Message.jsx 不需要区分 ACP 还是 miro。
  *

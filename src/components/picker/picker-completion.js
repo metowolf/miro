@@ -1,5 +1,5 @@
-import { stringWidth } from "../../markdown-width.js";
-import { pickerViewport } from "../picker-viewport.js";
+import { stringWidth } from "../../render/markdown-width.js";
+import { pickerViewport } from "./picker-viewport.js";
 import { truncateToCellWidth } from "./picker-rows.js";
 
 /** 内联补全给输入框、底栏和提示留空间，极矮窗口至少保留当前候选。 */

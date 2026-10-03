@@ -39,7 +39,7 @@
 
 ```text
 src/components/App.jsx
-src/components/Message.jsx
+src/components/transcript/Message.jsx
 src/main.js
 ```
 

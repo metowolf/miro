@@ -77,7 +77,7 @@ function tokenEndpoint(provider) {
     (state?.authorizationServerUrl ? new URL("/token", state.authorizationServerUrl).href : undefined);
 }
 
-/** 只兼容成功令牌响应中的空 scope，不改 MCP 业务响应，也不吞掉服务端 OAuth 错误。 */
+/** 发现、注册和令牌请求共用登录取消信号，响应校验交给 pi-mcp。 */
 export function mcpOAuthFetch(provider, fetchImpl = globalThis.fetch) {
   return async (input, init) => {
     provider.signal?.throwIfAborted();
@@ -85,20 +85,7 @@ export function mcpOAuthFetch(provider, fetchImpl = globalThis.fetch) {
       ? (init?.signal ? AbortSignal.any([provider.signal, init.signal]) : provider.signal) : init?.signal;
     const response = await fetchImpl(input, { ...init, ...(signal ? { signal } : {}) });
     provider.signal?.throwIfAborted();
-    const url = input instanceof Request ? input.url : String(input);
-    if (!response.ok || (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase() !== "POST" ||
-        url !== tokenEndpoint(provider)) return response;
-    let value;
-    try { value = await response.clone().json(); } catch { return response; }
-    provider.signal?.throwIfAborted();
-    if (!value || typeof value !== "object" || value.error !== undefined || value.scope !== "" ||
-        typeof value.access_token !== "string" || typeof value.token_type !== "string") return response;
-    delete value.scope;
-    const headers = new Headers(response.headers);
-    headers.delete("content-length");
-    headers.delete("content-encoding");
-    void response.body?.cancel().catch(() => {});
-    return new Response(JSON.stringify(value), { status: response.status, statusText: response.statusText, headers });
+    return response;
   };
 }
 
@@ -169,7 +156,8 @@ export async function loginMcp(config, { file = MCP_AUTH_FILE, print = (text) =>
       }
       const code = url.searchParams.get("code");
       if (!code) { finish.reject(new Error("MCP OAuth did not return an authorization code")); return new Response("No code", { status: 400 }); }
-      finish.resolve(code);
+      const iss = url.searchParams.get("iss");
+      finish.resolve({ authorizationCode: code, ...(iss !== null ? { iss } : {}) });
       return new Response("Authorization code received. Check the Miro terminal for the sign-in result.");
     } });
     // 直接 login 也先读取 401 挑战，不能假定默认 well-known 路径适用于所有网关。
@@ -201,10 +189,10 @@ export async function loginMcp(config, { file = MCP_AUTH_FILE, print = (text) =>
     print(`Open this URL to sign in: ${authorizationUrl}`);
     stage = "authorization callback";
     open(authorizationUrl);
-    const code = await Promise.race([callback, aborted]);
+    const authorizationResponse = await Promise.race([callback, aborted]);
     loginSignal.throwIfAborted();
     stage = "token exchange";
-    await authorize({ authorizationCode: code });
+    await authorize(authorizationResponse);
     print("MCP OAuth sign-in completed.");
   } catch (error) {
     loginSignal.throwIfAborted();

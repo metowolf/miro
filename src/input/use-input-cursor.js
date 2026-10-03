@@ -33,12 +33,8 @@ import { useStore } from "../transcript/store.js";
  *   超宽时只会截断而不会折行，锚点得跟着夹在可见范围内
  * @param options.text 光标前实际渲染的文本。提供它后会按字素模拟 Ink 的折行，
  *   尤其处理 CJK 在奇数列宽下无法塞进最后一格的情况；不提供时使用简单列偏移。
- * @param options.rowOffset 额外的行偏移，目前只有一个用途：整屏帧里补回 Ink 差的那一行。
- *   Ink 把「高度不小于终端行数」的帧当整屏处理（末尾不写换行），写完后光标停在最后一行，
- *   但它算锚点时仍按「停在最后一行之后」推：整屏帧里的真实光标恒定高一行，
- *   输入法会把预编辑串画到输入框上面去。常驻 UI 不是整屏帧，所以这个偏移默认为 0。
  */
-export function useInputCursor(ref, column, { truncate = false, text = null, rowOffset = 0 } = {}) {
+export function useInputCursor(ref, column, { truncate = false, text = null } = {}) {
   const { setCursorPosition } = useCursor();
   const { stdout } = useStdout();
   const [origin, setOrigin] = useState(null);
@@ -70,7 +66,7 @@ export function useInputCursor(ref, column, { truncate = false, text = null, row
 
   // 在渲染期写、由 useCursor 的 insertion effect 在本次提交里读走：
   // 放进 effect 里写会晚一个提交，光标要等下一次按键才跟上。
-  setCursorPosition(pinned ? caretPosition(origin, column, { truncate, text, rowOffset }) : undefined);
+  setCursorPosition(pinned ? caretPosition(origin, column, { truncate, text }) : undefined);
 }
 
 /**
@@ -81,17 +77,17 @@ export function useInputCursor(ref, column, { truncate = false, text = null, row
  * 折行时按终端字素宽度推进：宽字符无法塞入行尾剩余的一格时，先换行再绘制，
  * 这样连续多行 CJK 文本的锚点不会逐行漂移。
  */
-export function caretPosition({ x, y, width }, column, { truncate = false, text = null, rowOffset = 0 } = {}) {
-  if (!(width > 0)) return { x: x + column, y: y + rowOffset };
+export function caretPosition({ x, y, width }, column, { truncate = false, text = null } = {}) {
+  if (!(width > 0)) return { x: x + column, y };
   // 截断行（wrap="truncate"）不会折行，超出可见宽度时锚点就停在最后一个
   // 可见格之后；量到的宽度此时等于截断宽度，所以夹到 width 即可。
-  if (truncate) return { x: x + Math.min(column, width), y: y + rowOffset };
-  if (typeof text === "string") return wrappedCaretPosition({ x, y, width }, text, rowOffset);
-  return { x: x + (column % width), y: y + rowOffset + Math.floor(column / width) };
+  if (truncate) return { x: x + Math.min(column, width), y };
+  if (typeof text === "string") return wrappedCaretPosition({ x, y, width }, text);
+  return { x: x + (column % width), y: y + Math.floor(column / width) };
 }
 
 /** 按终端字素宽度折行，返回文本末尾（光标处）的坐标。 */
-function wrappedCaretPosition({ x, y, width }, text, rowOffset) {
+function wrappedCaretPosition({ x, y, width }, text) {
   let column = 0;
   let row = 0;
   for (const character of [...text]) {
@@ -111,5 +107,5 @@ function wrappedCaretPosition({ x, y, width }, text, rowOffset) {
       column %= width;
     }
   }
-  return { x: x + column, y: y + rowOffset + row };
+  return { x: x + column, y: y + row };
 }

@@ -118,11 +118,9 @@ export function Picker({
 
   // 搜索框的真实光标：中文过滤时输入法要靠它定位预编辑串（见 use-input-cursor.js）。
   // 这一行是 wrap="truncate"，超宽只截断不折行，所以走 truncate 夹位。
-  // 嵌入整屏框架时补一行偏移：Ink 在整屏帧里算锚点会差一行（见 rowOffset 的说明）。
   const searchRef = useRef(null);
   useInputCursor(searchRef, active && showSearch ? stringWidth("> " + query) : null, {
     truncate: true,
-    rowOffset: embedded ? 1 : 0,
   });
 
   // 标题、说明、搜索、提示和位置计数占用的行数预算。嵌入框架时标题与提示在框架上，

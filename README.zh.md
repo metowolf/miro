@@ -255,7 +255,7 @@ miro 用到的上游写在 `~/.miro/models.json`。打开 `/model` 会重新读�
 
 没有 Authorization 请求头的 HTTP 服务可使用 OAuth。运行 `miro mcp login <名称>` 或在 `/mcp` 中选择 Sign in；凭据保存在 `~/.miro/mcp-auth.json`。`miro mcp logout <名称>` 或 TUI 选项可注销。浏览器必须能访问本机回调端口（默认 8765，可用 `oauth.callbackPort` 设置）。在 TUI 登录面板按 Esc 或 Ctrl+C 可取消；关闭会话同样会取消登录并释放回调端口，整个 OAuth 流程超时为三分钟。
 
-登录会采用服务端 `WWW-Authenticate` 指定的资源元数据地址。权限优先取认证挑战或资源元数据（`scopes_supported`，也兼容部分网关的 `resource_scopes`），缺省时回退到已保存客户端的注册权限。需要覆盖登录请求的权限时，在 HTTP 服务条目中设置非空、以空格分隔的字符串，例如 `"oauth": { "scope": "openid profile offline_access" }`；只填写该服务支持的权限。OAuth 失败会标明阶段和错误码，不打印令牌响应。
+登录会采用服务端 `WWW-Authenticate` 指定的资源元数据地址。权限优先取认证挑战或资源元数据（`scopes_supported`，也兼容部分网关的 `resource_scopes`），缺省时回退到已保存客户端的注册权限。需要覆盖登录请求的权限时，在 HTTP 服务条目中设置非空、以空格分隔的字符串，例如 `"oauth": { "scope": "openid profile offline_access" }`；只填写该服务支持的权限。令牌响应中的空字符串或 null 权限视为缺省，缺省时保留请求权限。回调带有 `iss` 或授权服务器声明要求它时，登录会校验授权服务器身份。OAuth 失败会标明阶段和错误码，不打印令牌响应。
 
 **只配置可信服务。** 即使在 Manual 模式，发现工具也可能启动本地进程。实际 MCP 调用在 Manual 下需审批，授权绑定服务、工具和完整参数；非交互 Manual 会拒绝实际调用。Auto 不询问，也不对 MCP 执行 Terminal 安全审查。MCP 不受 Terminal 沙箱保护。取消或超时不代表远端副作用已撤销，调用不会自动重放。请妥善保管 `settings.json`；工具参数和结果仍属于会话数据。
 

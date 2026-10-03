@@ -41,7 +41,8 @@ async function gateway(t, options = {}) {
     authorizationServerUrl: `${origin}/oauth2`,
     authorizationServerMetadata: { issuer: `${origin}/oauth2`, authorization_endpoint: `${origin}/authorize`,
       token_endpoint: `${origin}/token`, registration_endpoint: `${origin}/register`, response_types_supported: ["code"],
-      token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"] },
+      token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"],
+      ...(options.issuerRequired ? { authorization_response_iss_parameter_supported: true } : {}) },
     resourceMetadata: { resource: `${origin}/mcp`, authorization_servers: [`${origin}/oauth2`],
       ...(options.resourceFields ?? { resource_scopes: gatewayScopes }) },
   };
@@ -63,6 +64,9 @@ async function gateway(t, options = {}) {
       callback.searchParams.set("error", options.callbackError);
       callback.searchParams.set("error_description", "secret-description");
     } else callback.searchParams.set("code", "test-code");
+    if (options.callbackIssuer !== undefined) {
+      callback.searchParams.set("iss", options.callbackIssuer === "matching" ? discovery.authorizationServerMetadata.issuer : options.callbackIssuer);
+    }
     browser = fetch(callback).then((response) => response.text()).catch(() => {});
   } }).finally(async () => { await browser; });
   return { config, file, provider, discovery, requests, registrations, tokenRequests, messages, login,
@@ -86,7 +90,7 @@ for (const cached of [false, true]) {
     assert.equal(flow.registrations.length, cached ? 0 : 1);
     if (!cached) assert.equal(flow.registrations[0].scope, gatewayScopes.join(" "));
     assert.equal(flow.provider.tokens().access_token, "test-access");
-    assert.equal(flow.provider.tokens().scope, undefined);
+    assert.equal(flow.provider.tokens().scope, gatewayScopes.join(" "));
     assert.equal(flow.tokenRequests.length, 1);
     assert.equal(flow.tokenRequests[0].resource, flow.config.url);
     assert.equal(flow.messages.at(-1), "MCP OAuth sign-in completed.");
@@ -131,8 +135,14 @@ for (const status of [200, 400]) {
   });
 }
 
-test("MCP OAuth 非字符串 token scope 保留 SDK 校验错误和换码阶段", async (t) => {
+test("MCP OAuth 空值 token scope 沿用请求权限", async (t) => {
   const flow = await gateway(t, { token: { access_token: "test", token_type: "Bearer", scope: null } });
+  await flow.login();
+  assert.equal(flow.provider.tokens().scope, gatewayScopes.join(" "));
+});
+
+test("MCP OAuth 非字符串 token scope 保留 SDK 校验错误和换码阶段", async (t) => {
+  const flow = await gateway(t, { token: { access_token: "test", token_type: "Bearer", scope: 123 } });
   await assert.rejects(flow.login(), /token exchange failed \(Error: Invalid scope\)/);
   assert.equal(flow.provider.tokens(), undefined);
 });
@@ -143,11 +153,12 @@ test("MCP OAuth 回调错误显示阶段与错误码，不尝试换码", async (
   assert.equal(flow.tokenRequests.length, 0);
 });
 
-test("MCP OAuth 空 scope 兼容只修改成功的 token POST 响应", async (t) => {
+test("MCP OAuth 请求包装保留原始响应供 SDK 校验", async (t) => {
   const flow = await gateway(t);
   flow.provider.saveDiscoveryState(flow.discovery);
   const value = { access_token: "fake", token_type: "Bearer", scope: "" };
-  for (const [url, method] of [[flow.config.url, "POST"], [flow.discovery.authorizationServerMetadata.token_endpoint, "GET"]]) {
+  for (const [url, method] of [[flow.config.url, "POST"], [flow.discovery.authorizationServerMetadata.token_endpoint, "GET"],
+    [flow.discovery.authorizationServerMetadata.token_endpoint, "POST"]]) {
     const response = Response.json(value);
     const request = mcpOAuthFetch(flow.provider, async () => response);
     assert.equal(await request(url, { method }), response);
@@ -155,7 +166,7 @@ test("MCP OAuth 空 scope 兼容只修改成功的 token POST 响应", async (t)
   }
 });
 
-test("MCP 运行时 OAuth 刷新复用空 scope 兼容，不要求再次登录", async (t) => {
+test("MCP 运行时 OAuth 刷新接受空 scope，不要求再次登录", async (t) => {
   const flow = await gateway(t);
   flow.provider.saveDiscoveryState(flow.discovery);
   flow.provider.saveClientInformation({ client_id: "cached" });
@@ -171,3 +182,24 @@ test("MCP 运行时 OAuth 刷新复用空 scope 兼容，不要求再次登录",
   assert.equal(await adapted.token(), "test-access");
   assert.equal(flow.provider.tokens().scope, undefined);
 });
+
+test("MCP OAuth 传递匹配的回调 issuer 并完成换码", async (t) => {
+  const flow = await gateway(t, { issuerRequired: true, callbackIssuer: "matching" });
+  await flow.login();
+  assert.equal(flow.tokenRequests.length, 1);
+  assert.equal(flow.provider.tokens().access_token, "test-access");
+});
+
+for (const [label, options] of [
+  ["声明支持但缺少 issuer", { issuerRequired: true }],
+  ["issuer 不匹配", { issuerRequired: true, callbackIssuer: "https://wrong.example" }],
+  ["未声明支持但返回错误 issuer", { callbackIssuer: "https://wrong.example" }],
+  ["返回空 issuer", { callbackIssuer: "" }],
+]) {
+  test(`MCP OAuth ${label}时拒绝换码`, async (t) => {
+    const flow = await gateway(t, options);
+    await assert.rejects(flow.login(), /token exchange failed \(OAuthIssuerMismatchError\)/);
+    assert.equal(flow.tokenRequests.length, 0);
+    assert.equal(flow.provider.tokens(), undefined);
+  });
+}

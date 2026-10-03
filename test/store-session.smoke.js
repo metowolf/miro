@@ -7,8 +7,8 @@ const tmpHome = mkdtempSync(path.join(os.tmpdir(), "miro-store-"));
 process.env.HOME = tmpHome;
 os.homedir = () => tmpHome;
 
-const { useStore, setRecorder } = await import("../src/store.js");
-const { SessionRecorder, loadSessionBlocks } = await import("../src/session-store.js");
+const { useStore, setRecorder } = await import("../src/transcript/store.js");
+const { SessionRecorder, loadSessionBlocks } = await import("../src/session/session-store.js");
 
 let failures = 0;
 const assert = (cond, msg) => {

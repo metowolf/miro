@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { stringWidth } from "../../markdown-width.js";
+import { stringWidth } from "../../render/markdown-width.js";
 import { completionHint, completionViewport } from "./picker-completion.js";
 
 test("补全列表最多八项，短窗口扣除输入框、底栏和提示后收缩", () => {

@@ -8,13 +8,13 @@
 // 比单块内联略快。改动分组时要保住入口的这份「薄」，别把重模块挪回来。
 import process from "node:process";
 
-import { parseCliArgs } from "./cli.js";
-import { HELP } from "./config.js";
+import { parseCliArgs } from "./cli/cli.js";
+import { HELP } from "./config/config.js";
 import { errorMessage } from "./utils.js";
 
 if (process.argv[2] === "mcp") {
   try {
-    const { runMcpCommand } = await import("./mcp-command.js");
+    const { runMcpCommand } = await import("./mcp/mcp-command.js");
     process.exitCode = await runMcpCommand(process.argv.slice(3));
   } catch (error) {
     process.stderr.write(`miro mcp: ${errorMessage(error)}\n`);
@@ -37,7 +37,7 @@ if (options.help) {
 }
 
 if (options.continueLatest && options.continueSessionId == null) {
-  const { latestSessionId } = await import("./session-store.js");
+  const { latestSessionId } = await import("./session/session-store.js");
   options.continueSessionId = latestSessionId(process.cwd(), options.acp ?? "miro");
   if (options.continueSessionId == null) {
     process.stderr.write("miro: no saved sessions for this project to continue.\n");
@@ -47,10 +47,10 @@ if (options.continueLatest && options.continueSessionId == null) {
 
 if (options.mode === "print") {
   // print 模式不加载 tui（React / Ink 那一整棵），反之亦然。
-  const { runHeadless } = await import("./headless.js");
+  const { runHeadless } = await import("./cli/headless.js");
   process.exitCode = await runHeadless(options);
 } else {
-  const { runTui } = await import("./tui.jsx");
+  const { runTui } = await import("./cli/tui.jsx");
   process.exitCode = await runTui(options);
 }
 }

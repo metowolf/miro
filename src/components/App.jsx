@@ -7,10 +7,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AcpClient } from "../acp/acp-client.js";
 import { MiroAgentClient } from "../miro/agent-client.js";
-import { projectMcpTrust, trustProjectMcp, updateMcpServerSetting } from "../mcp-config.js";
-import { logoutMcp } from "../mcp-oauth.js";
-import { catalogKey } from "../miro/models-file.js";
-import { OAUTH_PROVIDERS } from "../miro/oauth-providers.js";
+import { projectMcpTrust, trustProjectMcp, updateMcpServerSetting } from "../mcp/mcp-config.js";
+import { logoutMcp } from "../mcp/mcp-oauth.js";
+import { catalogKey } from "../miro/config/models-file.js";
+import { OAUTH_PROVIDERS } from "../miro/auth/oauth-providers.js";
 import { formatElapsed } from "../miro/goal.js";
 import { approvedPlanPrompt } from "../miro/plan-mode.js";
 import {
@@ -19,8 +19,8 @@ import {
   matchPermissionMode,
   normalizePermissionMode,
   permissionModeMessage,
-} from "../miro/permission-mode.js";
-import { isMiroProvider } from "../config.js";
+} from "../miro/permissions/permission-mode.js";
+import { isMiroProvider } from "../config/config.js";
 import {
   currentEffortName,
   currentModelName,
@@ -30,23 +30,23 @@ import {
 } from "../acp/model.js";
 import {
   detectProviders,
-} from "../providers.js";
-import { loadStartupContext } from "../agents-md.js";
+} from "../config/providers.js";
+import { loadStartupContext } from "../config/agents-md.js";
 import {
   matchConfigChoice,
   matchConfigOption,
 } from "../acp/config-options.js";
-import { matchProviderCommand, parseCommandInput } from "../commands.js";
-import { formatBashContext, getBashCommand, isBashInput, startBash } from "../bash.js";
+import { matchProviderCommand, parseCommandInput } from "../commands/commands.js";
+import { formatBashContext, getBashCommand, isBashInput, startBash } from "../terminal/bash.js";
 import {
   CLEAR_TERMINAL,
   HELP,
   THOUGHT_UI_FLUSH_MS,
   APP_VERSION,
-} from "../config.js";
-import { buildDefaultFilename, ensureTxtExtension, osc52Copy, renderTranscript } from "../export.js";
-import { openUrl } from "../open-browser.js";
-import { buildInitPrompt } from "../prompts.js";
+} from "../config/config.js";
+import { buildDefaultFilename, ensureTxtExtension, osc52Copy, renderTranscript } from "../transcript/export.js";
+import { openUrl } from "../terminal/open-browser.js";
+import { buildInitPrompt } from "../commands/init.js";
 import {
   readEffortPreference,
   readHomeSettings,
@@ -55,30 +55,30 @@ import {
   saveModel,
   saveLanguage,
   saveThinkingDisplay,
-} from "../settings.js";
+} from "../config/settings.js";
 import {
   DEFAULT_STATUS_LINE_ITEMS,
   readLanguageSetting,
   readStatusLineSettings,
   readThinkingSettings,
   writeStatusLineSettings,
-} from "../settings-file.js";
+} from "../config/settings-file.js";
 import {
   THINKING_DISPLAY_CHOICES,
   matchThinkingDisplayMode,
   normalizeThinkingDisplayMode,
-} from "../thinking.js";
-import { isLanguageOption, withLanguageOption } from "../language-config.js";
-import { languageDisplayName } from "../prompts/language.js";
+} from "../transcript/thinking.js";
+import { isLanguageOption, withLanguageOption } from "../config/language-config.js";
+import { languageDisplayName } from "../commands/prompts/language.js";
 import { parseStatusLineItems } from "../status-line/items.js";
 import { loadGitBranch, projectNameFor } from "../status-line/workspace-info.js";
 import {
   SessionRecorder,
   listSessions,
   loadSessionBlocks,
-} from "../session-store.js";
-import { getNextModeId } from "../mode-cycle.js";
-import { findReviewTarget } from "../review-target.js";
+} from "../session/session-store.js";
+import { getNextModeId } from "../commands/mode-cycle.js";
+import { findReviewTarget } from "../transcript/review-target.js";
 import {
   buildReviewRequest,
   currentBranch,
@@ -88,13 +88,13 @@ import {
   recentCommits,
   reviewPrompt,
   userFacingHint,
-} from "../review.js";
+} from "../commands/review.js";
 import {
   buildSimplifyRequest,
   looksLikePaths,
   simplifyPrompt,
   userFacingHint as simplifyHint,
-} from "../simplify.js";
+} from "../commands/simplify.js";
 import {
   buildCommitPushPrRequest,
   buildCommitRequest,
@@ -104,27 +104,27 @@ import {
   hasStagedChanges,
   parseCommitArgs,
   userFacingHint as commitHint,
-} from "../commit.js";
-import { useStore, setRecorder } from "../store.js";
-import { createLoginInteraction } from "../login-interaction.js";
+} from "../commands/commit.js";
+import { useStore, setRecorder } from "../transcript/store.js";
+import { createLoginInteraction } from "./dialogs/login-interaction.js";
 import { errorMessage } from "../utils.js";
-import { BashCard } from "./BashCard.jsx";
-import { ActivitySlot } from "./ActivitySlot.jsx";
-import { StatusVerb } from "./StatusVerb.jsx";
-import { Composer } from "./Composer.jsx";
-import { InputPrompt } from "./InputPrompt.jsx";
-import { Message } from "./Message.jsx";
-import { PermissionDialog } from "./PermissionDialog.jsx";
-import { PlanReviewDialog } from "./PlanReviewDialog.jsx";
-import { UserQuestionDialog } from "./UserQuestionDialog.jsx";
+import { BashCard } from "./transcript/BashCard.jsx";
+import { ActivitySlot } from "./transcript/ActivitySlot.jsx";
+import { StatusVerb } from "./status/StatusVerb.jsx";
+import { Composer } from "./input/Composer.jsx";
+import { InputPrompt } from "./input/InputPrompt.jsx";
+import { Message } from "./transcript/Message.jsx";
+import { PermissionDialog } from "./dialogs/PermissionDialog.jsx";
+import { PlanReviewDialog } from "./dialogs/PlanReviewDialog.jsx";
+import { UserQuestionDialog } from "./dialogs/UserQuestionDialog.jsx";
 import { Picker } from "./picker/Picker.jsx";
 import { PickerFlow } from "./picker/PickerFlow.jsx";
-import { ConfigPanel } from "./ConfigPanel.jsx";
-import { StatusBar } from "./StatusBar.jsx";
-import { StatusLineSetup } from "./StatusLineSetup.jsx";
-import { ReviewBrowser } from "./ReviewBrowser.jsx";
-import { QueueEditor } from "./QueueEditor.jsx";
-import { Transcript } from "./Transcript.jsx";
+import { ConfigPanel } from "./config/ConfigPanel.jsx";
+import { StatusBar } from "./status/StatusBar.jsx";
+import { StatusLineSetup } from "./config/StatusLineSetup.jsx";
+import { ReviewBrowser } from "./review/ReviewBrowser.jsx";
+import { QueueEditor } from "./input/QueueEditor.jsx";
+import { Transcript } from "./transcript/Transcript.jsx";
 
 /** 命令识别用 trim 副本；普通 prompt 保留原始空白。 */
 export function prepareSubmittedInput(raw, display) {
@@ -1841,7 +1841,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
    * raw: true 只是不带排队的 bash 上下文；injectContext 仍显式打开，
    * 因为项目约定（AGENTS.md）本身就是审查依据，缺了它容易报出与项目规范
    * 相悖的问题。注入位置在 rubric 之前，所以 rubric 的优先级措辞写成不依赖
-   * 前后顺序（见 src/prompts/<language>/review.js 与 review.test.js 的对应断言）。
+   * 前后顺序（见 src/commands/prompts/<language>/review.js 与 review.test.js 的对应断言）。
    */
   const runReview = async (target) => {
     const store = useStore.getState();

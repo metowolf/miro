@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { readJsonObject } from "../settings-file.js";
+import { readJsonObject } from "../config/settings-file.js";
 import { MiroAgentClient } from "./agent-client.js";
 
 function fixture(t) {

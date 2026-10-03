@@ -335,7 +335,7 @@ The waiting-verb animation on the status line is customizable via `spinnerVerbs`
 
 ### Prompt language
 
-`/config language English` (or `en`, `en-us`), `/config language Chinese` (or `zh`, `zh-cn`, `中文`) or `/config language Cantonese` (or `yue`, `zh-hk`, `zh-yue`, `粤语`, `粵語`) sets the language of miro's own built-in workflow prompts (`/init`, `/review`, `/simplify`, `/commit`, and `/commit-push-pr`) and saves it as `language` in `~/.miro/settings.json`. English is the default, and unknown values fall back to it. The ACP session config and your own messages are untouched; the prompt text itself lives under `src/prompts/<language>/`, so adding a language means adding a directory there.
+`/config language English` (or `en`, `en-us`), `/config language Chinese` (or `zh`, `zh-cn`, `中文`) or `/config language Cantonese` (or `yue`, `zh-hk`, `zh-yue`, `粤语`, `粵語`) sets the language of miro's own built-in workflow prompts (`/init`, `/review`, `/simplify`, `/commit`, and `/commit-push-pr`) and saves it as `language` in `~/.miro/settings.json`. English is the default, and unknown values fall back to it. The ACP session config and your own messages are untouched; the prompt text itself lives under `src/commands/prompts/<language>/`, so adding a language means adding a directory there.
 
 ### Status line
 

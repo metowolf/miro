@@ -5,7 +5,7 @@
  * 避免调用方因为装不下自己的字段而绕过通用组件另抄一套。
  */
 
-import { stringWidth } from "../../markdown-width.js";
+import { stringWidth } from "../../render/markdown-width.js";
 
 /**
  * 归一化单行。label 缺省时依次回落 name → value。

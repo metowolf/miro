@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { parseMcpServers } from "../src/mcp-config.js";
-import { McpRuntime } from "../src/miro/mcp-runtime.js";
+import { parseMcpServers } from "../src/mcp/mcp-config.js";
+import { McpRuntime } from "../src/mcp/mcp-runtime.js";
 import { respondMcp } from "./fixtures/mcp-server.js";
 
 const fixture = fileURLToPath(new URL("./fixtures/mcp-server.js", import.meta.url));

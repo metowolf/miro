@@ -8,7 +8,7 @@ process.env.HOME = tmpHome;
 os.homedir = () => tmpHome;
 
 const { SessionRecorder, listSessions, loadSessionBlocks, latestSessionId } = await import(
-  "../src/session-store.js"
+  "../src/session/session-store.js"
 );
 
 const cwd = process.cwd();

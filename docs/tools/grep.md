@@ -45,15 +45,15 @@ ripgrep。
 `context` 为 0（默认）：
 
 ```text
-src/cli.js:120: const provider = options.provider ?? null;
-src/cli.js:184: if (provider) return provider;
+src/cli/cli.js:120: const provider = options.provider ?? null;
+src/cli/cli.js:184: if (provider) return provider;
 ```
 
 `context` 大于 0：命中行用 `:` 分隔，上下文行用 `-` 分隔（与 `grep -C` 的约定一致）：
 
 ```text
 src/cli.js-118- function resolveProvider(options) {
-src/cli.js:120: const provider = options.provider ?? null;
+src/cli/cli.js:120: const provider = options.provider ?? null;
 src/cli.js-121- return provider ?? "miro";
 ```
 

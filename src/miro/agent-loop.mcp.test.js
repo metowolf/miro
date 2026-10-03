@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseMcpServers } from "../mcp-config.js";
+import { parseMcpServers } from "../mcp/mcp-config.js";
 import { permissionDecision, runAgentLoop } from "./agent-loop.js";
 import { MiroAgentClient } from "./agent-client.js";
-import { McpRuntime } from "./mcp-runtime.js";
-import { permissionScope } from "./permission-mode.js";
+import { McpRuntime } from "../mcp/mcp-runtime.js";
+import { permissionScope } from "./permissions/permission-mode.js";
 import { createToolRunners, isConcurrencySafeCall } from "./tools/index.js";
 
 const config = { cwd: "/work", model: "test", protocol: "chat-completions", permissionMode: "auto", maxToolRounds: 2, contextWindow: 128_000, autoCompact: false };

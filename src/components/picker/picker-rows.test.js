@@ -12,7 +12,7 @@ import {
   truncatePathToCellWidth,
   truncateToCellWidth,
 } from "./picker-rows.js";
-import { stringWidth } from "../../markdown-width.js";
+import { stringWidth } from "../../render/markdown-width.js";
 
 test("normalizeItem falls back through label → name → value in order", () => {
   assert.equal(normalizeItem({ value: "v", label: "L", name: "N" }, 0).label, "L");

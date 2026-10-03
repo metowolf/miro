@@ -19,7 +19,7 @@ import { stat } from "node:fs/promises";
 
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 
-import { RISK_LEVELS, RISK_LEVEL_DESCRIPTION, RISK_REASON_DESCRIPTION } from "../risk-level.js";
+import { RISK_LEVELS, RISK_LEVEL_DESCRIPTION, RISK_REASON_DESCRIPTION } from "../permissions/risk-level.js";
 import { textContent, truncate } from "./shared.js";
 
 const EXECUTE_MAX_OUTPUT = 30_000;

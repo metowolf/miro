@@ -1,6 +1,6 @@
 # mcp_list_tools
 
-发现系统配置中的 MCP 服务与工具，返回完整参数 schema。实现位于 `src/miro/tools/mcp.js` 与 `src/miro/mcp-runtime.js`。
+发现系统配置中的 MCP 服务与工具，返回完整参数 schema。实现位于 `src/miro/tools/mcp.js` 与 `src/mcp/mcp-runtime.js`。
 
 | 参数 | 类型 | 必填 | 含义 |
 | --- | --- | --- | --- |

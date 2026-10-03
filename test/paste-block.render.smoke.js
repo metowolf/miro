@@ -10,8 +10,8 @@ import { EventEmitter } from "node:events";
 import React from "react";
 import { PassThrough } from "node:stream";
 
-import { Composer } from "../src/components/Composer.jsx";
-import { InputHistory } from "../src/input-history.js";
+import { Composer } from "../src/components/input/Composer.jsx";
+import { InputHistory } from "../src/input/input-history.js";
 
 const COLUMNS = 80;
 

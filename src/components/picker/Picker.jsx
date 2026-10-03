@@ -1,9 +1,9 @@
 import { Box, Text, useInput, useStdout } from "ink";
 import { useMemo, useRef, useState } from "react";
 
-import { useInputCursor } from "../../hooks/use-input-cursor.js";
-import { pickerDensity, pickerViewport } from "../picker-viewport.js";
-import { stringWidth } from "../../markdown-width.js";
+import { useInputCursor } from "../../input/use-input-cursor.js";
+import { pickerDensity, pickerViewport } from "./picker-viewport.js";
+import { stringWidth } from "../../render/markdown-width.js";
 import { filterItems, highlightSegments } from "./picker-filter.js";
 import { footerHint as buildFooterHint, pickerAction } from "./picker-keys.js";
 import {

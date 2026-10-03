@@ -15,7 +15,7 @@
 | --- | --- |
 | kind | `execute` |
 | UI 标题 | `terminal`（线格式名直接展示；`title` 字段上报 `Terminal`） |
-| 实现 | `src/miro/tools/terminal.js`（沙箱与宿主两条分支，进程管理复用 `src/bash.js`） |
+| 实现 | `src/miro/tools/terminal.js`（沙箱与宿主两条分支，进程管理复用 `src/terminal/bash.js`） |
 | 需要审批 | Auto 下不询问用户；`high` 或 `sandbox: false` 自动审查，其余直接执行。Manual 下一律审批，可按精确动作记忆会话授权 |
 | 可并行 | 否，按调用顺序串行 |
 | 可流式抢跑 | 仅当它是本批的第一个调用、且该次判定不需要弹审批框 |

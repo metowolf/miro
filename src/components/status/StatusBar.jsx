@@ -17,6 +17,7 @@ export function StatusBar({
   statusLineUseColors = true,
   statusLineSnapshot = null,
   goal = null,
+  inputHint = null,
   hidden = false,
 }) {
   const connecting = status === "connecting";
@@ -44,6 +45,14 @@ export function StatusBar({
   } else if (hidden) {
     return null;
   } else {
+    if (statusLineItems?.length === 0) return null;
+    if (inputHint) {
+      return (
+        <Box paddingX={1}>
+          <Text dimColor wrap="truncate">{inputHint}</Text>
+        </Box>
+      );
+    }
     // 稳定态统一走配置化状态栏；未提供配置时用默认项，空数组表示隐藏。
     const { segments } = buildStatusLineSegments(
       statusLineItems ?? DEFAULT_STATUS_LINE_ITEMS,

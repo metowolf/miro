@@ -753,9 +753,6 @@ export function Composer({
       ) : helpOpen ? (
         <ShortcutHelp busy={busy} canSteer={canSteer} />
       ) : null}
-      {busy && !helpOpen && !showSuggestions && !fileQuery.pending ? (
-        <Box paddingX={1}><Text dimColor>{canSteer ? "Enter to steer · Tab to queue" : "Enter/Tab to queue · steering unavailable"}</Text></Box>
-      ) : null}
     </Box>
   );
 }

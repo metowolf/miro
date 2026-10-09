@@ -71,6 +71,7 @@ import {
 import { isLanguageOption, withLanguageOption } from "../config/language-config.js";
 import { languageDisplayName } from "../commands/prompts/language.js";
 import { parseStatusLineItems } from "../status-line/items.js";
+import { composerHasDraft, inputHint } from "../status-line/input-hint.js";
 import { loadGitBranch, projectNameFor } from "../status-line/workspace-info.js";
 import {
   SessionRecorder,
@@ -363,6 +364,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
   // 本会话是否已落过 ui_state：决定「全空」到底是无事可存，还是要记录清空。
   const uiStateRecordedRef = useRef(false);
   const [composerSession, setComposerSession] = useState({ key: null, snapshot: null });
+  const [hasComposerDraft, setHasComposerDraft] = useState(false);
 
   const checkpointUiState = () => {
     if (uiCheckpointTimerRef.current != null) {
@@ -394,12 +396,14 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
 
   const handleComposerSnapshotChange = (snapshot) => {
     composerSnapshotRef.current = snapshot;
+    setHasComposerDraft(composerHasDraft(snapshot));
     scheduleUiCheckpoint();
   };
 
   const stageSessionUiState = (key, uiState = null) => {
     const snapshot = uiState?.composer ?? emptyComposerSnapshot();
     composerSnapshotRef.current = snapshot;
+    setHasComposerDraft(composerHasDraft(snapshot));
     // 恢复出来的状态本身就来自文件，等价于「已写过」；全新会话则从未写过。
     uiStateRecordedRef.current = uiState != null;
     useStore.getState().replaceQueuedInputs(uiState?.queuedInputs ?? []);
@@ -3001,6 +3005,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
   });
 
   const connecting = status === "connecting";
+  const canSteer = !cancelling && clientRef.current?.steeringCapability?.().available === true;
 
   return (
     <Box flexDirection="column">
@@ -3119,7 +3124,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
           locked={modeSwitching || exiting}
           onSubmit={handleSubmit}
           busy={busy}
-          canSteer={!cancelling && clientRef.current?.steeringCapability?.().available === true}
+          canSteer={canSteer}
           onCycleMode={cycleMode}
           providerCommands={providerCommands}
           helpOpen={helpOpen}
@@ -3137,14 +3142,6 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
             {pendingInputs.slice(0, 3).map((input) => <Text key={input.id} dimColor wrap="truncate-end">{String(input.display ?? input.text).replace(/\s+/g, " ")}</Text>)}
           </Box>
         ) : null}
-        {queuedInputs.length > 0 ? (
-          <Box paddingX={1}>
-            <Text dimColor>
-              {queuedInputs.length} message{queuedInputs.length > 1 ? "s" : ""} queued{queuePaused ? " · paused" : ""} · Ctrl+Q to review{queuePaused ? " and resume" : ""}
-            </Text>
-          </Box>
-        ) : null}
-
         <StatusBar
           status={status}
           connectionStage={connectionStage}
@@ -3156,6 +3153,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
           statusLineItems={statusLineConfig.items}
           statusLineUseColors={statusLineConfig.useColors}
           goal={goal}
+          inputHint={inputHint({ busy, hasDraft: hasComposerDraft, canSteer, queuedCount: queuedInputs.length, queuePaused })}
           statusLineSnapshot={{
             modelName: modelConfig ? currentModelName(modelConfig) : null,
             effortName: currentEffortName(effortConfig),

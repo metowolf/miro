@@ -7,7 +7,7 @@
 | --- | --- |
 | kind | `tasks` |
 | UI 标题 | Update tasks |
-| 实现 | `src/miro/tools/update-tasks.js` |
+| 实现 | `src/miro/tools/update-tasks.ts` |
 | 需要审批 | 否 |
 | 可并行 | 是，可与同批的 `read` / `search` / `tasks` 一起跑，上限 8 |
 | 可流式抢跑 | 是 |
@@ -49,7 +49,7 @@
   ```
 - 空数组：输出 `Task list cleared.`，同时清空界面上的清单块。
 
-归一化后的条目通过 `onUpdate` 回调转成 `plan` 事件，`App.jsx` 再调用 `store.setPlan()`；
+归一化后的条目通过 `onUpdate` 回调转成 `plan` 事件，`App.tsx` 再调用 `store.setPlan()`；
 transcript 上的清单块由 store 生成。内容完全相同的快照会被去重，所以重复提交同一张
 清单不会在界面上再落一个块。
 

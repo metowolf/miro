@@ -7,7 +7,7 @@
 | --- | --- |
 | kind | `read` |
 | UI 标题 | Read |
-| 实现 | `src/miro/tools/read-file.js` |
+| 实现 | `src/miro/tools/read-file.ts` |
 | 需要审批 | 否（只读） |
 | 可并行 | 是，可与同批的 `read` / `search` / `tasks` 一起跑，上限 8 |
 | 可流式抢跑 | 是 |

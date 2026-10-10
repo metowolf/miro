@@ -21,7 +21,7 @@
 
 ## 环境要求
 
-- [Bun](https://bun.sh/) **>= 1.2**
+- [Bun](https://bun.sh/) **>= 1.4.3**
 - 为 Miro 自带 agent 准备一个兼容的 API 端点；仅在使用 `--acp` 时才需要 `PATH` 上的 ACP 提供方二进制（见 [ACP 提供方](#acp-提供方)）
 
 ## 安装与运行
@@ -43,7 +43,7 @@ bun run build
 带 `v*` 的发布标签会构建 Linux / macOS（x64 与 arm64）二进制。本地交叉编译与 CI 使用相同参数：
 
 ```bash
-bun run scripts/build.js --target bun-linux-x64 --outfile dist/miro-linux-amd64
+bun run scripts/build.ts --target bun-linux-x64 --outfile dist/miro-linux-amd64
 ```
 
 ## 用法

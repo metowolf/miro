@@ -6,7 +6,7 @@
 | --- | --- |
 | kind | `edit` |
 | UI 标题 | Edit |
-| 实现 | `src/miro/tools/write-file.js` |
+| 实现 | `src/miro/tools/write-file.ts` |
 | 需要审批 | 是（`auto` 下有效路径仍在工作区内时自动放行；越界或经现有符号链接逃出工作区需单次审批；`manual` 下一律审批） |
 | 可并行 | 否，按调用顺序串行 |
 | 可流式抢跑 | 仅当它是本批的第一个调用、且该次判定不需要弹审批框 |
@@ -55,5 +55,5 @@
 
 ## 兼容说明
 
-`write-file.js` 额外导出 `editTool`，等于 `writeFileTool`，是拆分 write / edit 之前的
+`write-file.ts` 额外导出 `editTool`，等于 `writeFileTool`，是拆分 write / edit 之前的
 公开导出名，仅为兼容保留。

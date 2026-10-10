@@ -7,7 +7,7 @@
 | --- | --- |
 | kind | `spawn` |
 | UI 标题 | Sub-agent |
-| 实现 | `src/miro/tools/spawn-agent.js`、`src/miro/subagent-runner.js` |
+| 实现 | `src/miro/tools/spawn-agent.ts`、`src/miro/subagent-runner.ts` |
 | 需要审批 | 这个调用本身不弹窗；子智能体内部的写与命令照常走审批 |
 | 可并行 | 否，一次一个，按调用顺序执行 |
 | 可流式抢跑 | 否，`EAGER_BLOCKED_KINDS` 明确排除 |
@@ -44,7 +44,7 @@ sub-agent)`。执行器只强校验 `message`；`description` 缺失时 UI 上�
 ## 中间过程与最终结果
 
 中间过程以 JSONL 快照流式上报，走的是 `tool_call_update` 的 `in_progress` 状态，
-由 `src/transcript/subagent.js` 的 `updateSubagentState` 解析——与 ACP 侧同构，UI 不需要区分
+由 `src/transcript/subagent.ts` 的 `updateSubagentState` 解析——与 ACP 侧同构，UI 不需要区分
 provider。快照文本上限 200 000 字符；超限后只停写中间过程，终态信号 `RUN_FINISHED`
 仍然照写，否则卡片会永远停在 `Running…`。
 

@@ -1,7 +1,7 @@
 # miro 内置工具
 
 `miro` provider（miro 自带的 agent harness）在进程内自己跑工具循环。发给模型的 schema、
-参数解析、并发分批与执行器装配都集中在 `src/miro/tools/index.js`，每个工具的实现与定义
+参数解析、并发分批与执行器装配都集中在 `src/miro/tools/index.ts`，每个工具的实现与定义
 在 `src/miro/tools/` 下的同名文件里。这套文档一工具一篇，逐项写明参数、行为、输出、
 权限与限制。
 
@@ -9,21 +9,21 @@
 
 | 工具 | kind | UI 标题 | 文档 | 实现 |
 | --- | --- | --- | --- | --- |
-| `read_file` | `read` | Read | [read_file.md](./read_file.md) | `src/miro/tools/read-file.js` |
-| `write_file` | `edit` | Edit | [write_file.md](./write_file.md) | `src/miro/tools/write-file.js` |
-| `edit_file` | `edit` | Edit | [edit_file.md](./edit_file.md) | `src/miro/tools/edit-file.js` |
-| `terminal` | `execute` | terminal | [terminal.md](./terminal.md) | `src/miro/tools/terminal.js`（`miro.sandbox.enabled` 只决定跑沙箱还是宿主 shell） |
-| `grep` | `search` | Grep | [grep.md](./grep.md) | `src/miro/tools/grep.js` |
-| `glob` | `search` | Glob | [glob.md](./glob.md) | `src/miro/tools/glob.js` |
-| `mcp_list_tools` | `search` | MCP tools | [mcp_list_tools.md](./mcp_list_tools.md) | `src/miro/tools/mcp.js`、`src/mcp/mcp-runtime.js` |
-| `mcp_call` | `execute` | MCP 服务 / 工具 | [mcp_call.md](./mcp_call.md) | `src/miro/tools/mcp.js`、`src/mcp/mcp-runtime.js` |
-| `spawn_agent` | `spawn` | Sub-agent | [spawn_agent.md](./spawn_agent.md) | `src/miro/tools/spawn-agent.js`、`src/miro/subagent-runner.js` |
-| `update_tasks` | `tasks` | Update tasks | [update_tasks.md](./update_tasks.md) | `src/miro/tools/update-tasks.js` |
-| `update_goal` | `goal` | Update goal | [update_goal.md](./update_goal.md) | `src/miro/tools/update-goal.js` |
-| `set_goal_budget` | `goal` | Set goal budget | [update_goal.md](./update_goal.md) | `src/miro/tools/update-goal.js` |
-| `enter_plan_mode` | `plan` | Enter Plan Mode | [enter_plan_mode.md](./enter_plan_mode.md) | `src/miro/tools/plan-mode.js` |
-| `request_user_input` | `input` | Question | [request_user_input.md](./request_user_input.md) | `src/miro/tools/plan-mode.js` |
-| `exit_plan_mode` | `plan` | Review Plan | [exit_plan_mode.md](./exit_plan_mode.md) | `src/miro/tools/plan-mode.js` |
+| `read_file` | `read` | Read | [read_file.md](./read_file.md) | `src/miro/tools/read-file.ts` |
+| `write_file` | `edit` | Edit | [write_file.md](./write_file.md) | `src/miro/tools/write-file.ts` |
+| `edit_file` | `edit` | Edit | [edit_file.md](./edit_file.md) | `src/miro/tools/edit-file.ts` |
+| `terminal` | `execute` | terminal | [terminal.md](./terminal.md) | `src/miro/tools/terminal.ts`（`miro.sandbox.enabled` 只决定跑沙箱还是宿主 shell） |
+| `grep` | `search` | Grep | [grep.md](./grep.md) | `src/miro/tools/grep.ts` |
+| `glob` | `search` | Glob | [glob.md](./glob.md) | `src/miro/tools/glob.ts` |
+| `mcp_list_tools` | `search` | MCP tools | [mcp_list_tools.md](./mcp_list_tools.md) | `src/miro/tools/mcp.ts`、`src/mcp/mcp-runtime.ts` |
+| `mcp_call` | `execute` | MCP 服务 / 工具 | [mcp_call.md](./mcp_call.md) | `src/miro/tools/mcp.ts`、`src/mcp/mcp-runtime.ts` |
+| `spawn_agent` | `spawn` | Sub-agent | [spawn_agent.md](./spawn_agent.md) | `src/miro/tools/spawn-agent.ts`、`src/miro/subagent-runner.ts` |
+| `update_tasks` | `tasks` | Update tasks | [update_tasks.md](./update_tasks.md) | `src/miro/tools/update-tasks.ts` |
+| `update_goal` | `goal` | Update goal | [update_goal.md](./update_goal.md) | `src/miro/tools/update-goal.ts` |
+| `set_goal_budget` | `goal` | Set goal budget | [update_goal.md](./update_goal.md) | `src/miro/tools/update-goal.ts` |
+| `enter_plan_mode` | `plan` | Enter Plan Mode | [enter_plan_mode.md](./enter_plan_mode.md) | `src/miro/tools/plan-mode.ts` |
+| `request_user_input` | `input` | Question | [request_user_input.md](./request_user_input.md) | `src/miro/tools/plan-mode.ts` |
+| `exit_plan_mode` | `plan` | Review Plan | [exit_plan_mode.md](./exit_plan_mode.md) | `src/miro/tools/plan-mode.ts` |
 
 ## 这些工具共有的约定
 
@@ -36,7 +36,7 @@
 `kind` 不参与模型可见的 schema，只被循环层用来做三件事：
 
 - **审批**：只有 `CONFIRM_KINDS`（`edit`、`execute`、`delete`、`move`）里的调用才可能弹
-  审批框。两个权限档位（`src/miro/permissions/permission-mode.js`）：
+  审批框。两个权限档位（`src/miro/permissions/permission-mode.ts`）：
   - `auto`（默认）：不弹审批框。非 Terminal 工具直接执行；Terminal 仅在 `risk_level: high`
     或 `sandbox: false` 时交给隔离审查模型，无法明确批准就直接拒绝并把理由回灌给主模型。
     审查结论跟着工具行走（`Auto safety review: blocked · <理由>`），被拦下时理由必须留在
@@ -87,7 +87,7 @@
 ### 单回合结果预算
 
 每个工具自己都有逐条截断上限，但一个回合可以并行跑出很多条结果
-（`src/miro/context/tool-result-budget.js`）。当一回合所有工具结果的总量超过
+（`src/miro/context/tool-result-budget.ts`）。当一回合所有工具结果的总量超过
 `DEFAULT_TOOL_RESULT_BUDGET`（120 000 字符，约 30k token）时，预算按「条目数均分」：
 
 - 每条超过自己份额的结果，只保留开头一段预览，其余原文落盘到
@@ -98,7 +98,7 @@
 
 ### 忽略规则（搜索类工具共用）
 
-`grep` 的目录搜索与 `glob` 用同一套过滤器（`src/miro/tools/shared.js` 的
+`grep` 的目录搜索与 `glob` 用同一套过滤器（`src/miro/tools/shared.ts` 的
 `buildIgnoreFilter`），规则匹配交给 `ignore`，按三层叠加：
 
 1. VCS 元数据目录无条件跳过：`.git`、`.svn`、`.hg`、`.bzr`、`.jj`、`.sl`，不能反忽略。

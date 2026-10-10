@@ -21,7 +21,7 @@
 
 ## Requirements
 
-- [Bun](https://bun.sh/) **>= 1.2**
+- [Bun](https://bun.sh/) **>= 1.4.3**
 - An API endpoint for Miro's built-in agent; an ACP binary on `PATH` is needed only for `--acp` (see [ACP providers](#acp-providers))
 
 ## Install and run
@@ -43,7 +43,7 @@ bun run build
 Release tags (`v*`) publish Linux and macOS binaries (x64 and arm64). Local cross-compiles use the same flags as CI:
 
 ```bash
-bun run scripts/build.js --target bun-linux-x64 --outfile dist/miro-linux-amd64
+bun run scripts/build.ts --target bun-linux-x64 --outfile dist/miro-linux-amd64
 ```
 
 ## Usage

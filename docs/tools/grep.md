@@ -7,7 +7,7 @@ ripgrep。
 | --- | --- |
 | kind | `search` |
 | UI 标题 | Grep |
-| 实现 | `src/miro/tools/grep.js` |
+| 实现 | `src/miro/tools/grep.ts` |
 | 需要审批 | 否 |
 | 可并行 | 是，可与同批的 `read` / `search` / `tasks` 一起跑，上限 8 |
 | 可流式抢跑 | 是 |
@@ -45,16 +45,16 @@ ripgrep。
 `context` 为 0（默认）：
 
 ```text
-src/cli/cli.js:120: const provider = options.provider ?? null;
-src/cli/cli.js:184: if (provider) return provider;
+src/cli/cli.ts:120: const provider = options.provider ?? null;
+src/cli/cli.ts:184: if (provider) return provider;
 ```
 
 `context` 大于 0：命中行用 `:` 分隔，上下文行用 `-` 分隔（与 `grep -C` 的约定一致）：
 
 ```text
-src/cli.js-118- function resolveProvider(options) {
-src/cli/cli.js:120: const provider = options.provider ?? null;
-src/cli.js-121- return provider ?? "miro";
+src/cli.ts-118- function resolveProvider(options) {
+src/cli/cli.ts:120: const provider = options.provider ?? null;
+src/cli.ts-121- return provider ?? "miro";
 ```
 
 - 单行超过 500 字符时截断并加 `…`：一行压缩后的代码不该吃掉整个输出预算。

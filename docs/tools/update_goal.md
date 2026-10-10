@@ -8,14 +8,14 @@
 | --- | --- | --- |
 | kind | `goal` | `goal` |
 | UI 标题 | Update goal | Set goal budget |
-| 实现 | `src/miro/tools/update-goal.js` | 同左 |
+| 实现 | `src/miro/tools/update-goal.ts` | 同左 |
 | 需要审批 | 否 | 否 |
 | 可并行 | 是，可与同批的 `read` / `search` / `tasks` / `goal` 一起跑，上限 8 | 同左 |
 | 可流式抢跑 | 是 | 是 |
 
 ## 装配条件
 
-目标状态（`src/miro/goal.js` 的 `createGoalState()` 实例）由 `createToolRunners` 注入，
+目标状态（`src/miro/goal.ts` 的 `createGoalState()` 实例）由 `createToolRunners` 注入，
 不是模块级单例：同一进程里可以有多个会话，共享一份状态会让它们互相覆盖。
 
 - 没有传 `goal` 时**两个工具都不装配**。schemas 会过滤掉没有 runner 的工具，所以无目标的
@@ -64,7 +64,7 @@
 
 ## 与循环的配合
 
-`src/miro/agent-loop.js` 里三处专门配合目标：
+`src/miro/agent-loop.ts` 里三处专门配合目标：
 
 - **提醒刷新**：每轮按当前状态重算目标提醒，先摘掉历史里旧的几份（按
   `GOAL_NOTICE_PREFIXES` 前缀识别）再推新的一份。进度、预算余量与状态每轮都在变，留着

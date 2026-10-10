@@ -6,7 +6,7 @@
 | --- | --- |
 | kind | `search` |
 | UI 标题 | Glob |
-| 实现 | `src/miro/tools/glob.js` |
+| 实现 | `src/miro/tools/glob.ts` |
 | 需要审批 | 否 |
 | 可并行 | 是，可与同批的 `read` / `search` / `tasks` 一起跑，上限 8 |
 | 可流式抢跑 | 是 |
@@ -38,9 +38,9 @@
 路径之间用换行分隔，路径相对搜索目录：
 
 ```text
-src/components/App.jsx
-src/components/transcript/Message.jsx
-src/main.js
+src/components/App.tsx
+src/components/transcript/Message.tsx
+src/main.ts
 ```
 
 - 整体输出超过 30 000 字符时截断。

@@ -1,15 +1,14 @@
 {
   "name": "miro-cli",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "A multi-agent ACP terminal client built with React + Ink",
   "type": "module",
   "bin": {
     "miro": "dist/miro"
   },
   "scripts": {
-    "start": "bun run src/main.js",
-    "build": "bun run scripts/build.js",
-    "build:js": "bun run scripts/build.js --no-compile",
+    "start": "bun run src/main.ts",
+    "build": "bun run scripts/build.ts",
     "tui": "dist/miro"
   },
   "keywords": [],
@@ -30,10 +29,11 @@
     "yaml": "2.9.1",
     "zustand": "^5.0.15"
   },
-  "devDependencies": {
-    "@types/bun": "^1.4.2"
-  },
   "engines": {
-    "bun": ">=1.2.0"
+    "bun": ">=1.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@types/react": "^19.3.0"
   }
 }

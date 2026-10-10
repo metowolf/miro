@@ -1,7 +1,7 @@
 # mcp_call
 
 调用已配置 MCP 服务中的工具。先用 `mcp_list_tools` 检查远端参数 schema，再提供调用参数。
-实现位于 `src/miro/tools/mcp.js` 与 `src/mcp/mcp-runtime.js`。
+实现位于 `src/miro/tools/mcp.ts` 与 `src/mcp/mcp-runtime.ts`。
 
 | 参数 | 类型 | 必填 | 含义 |
 | --- | --- | --- | --- |

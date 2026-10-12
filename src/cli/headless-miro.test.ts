@@ -31,7 +31,7 @@ function miroStream(...rounds) {
   };
 }
 
-function dependencies({ stdout, stderr, records, stream, settings = {}, createPlanFile = null }: any) {
+function dependencies({ stdout, stderr, records, stream, settings = {}, createPlanFile = null, mcpRuntime = null }: any) {
   return {
     stdout,
     stderr,
@@ -64,6 +64,7 @@ function dependencies({ stdout, stderr, records, stream, settings = {}, createPl
             }),
             streamCompletion: stream,
             ...(createPlanFile ? { createPlanFile } : {}),
+            ...(mcpRuntime ? { mcpRuntime } : {}),
           },
         });
       }
@@ -220,3 +221,40 @@ test("the CLI -m wins over the shared model preference under the miro provider",
   assert.equal(err.value(), `${AUTO_WARNING}\n`);
   assert.equal(records.find((item) => item.model != null).model, "m1");
 });
+
+for (const outputFormat of ["json", "text"]) {
+  test(`headless codemode ${outputFormat} 保持 stdout 纯结果并报告真实内部 MCP 拒绝`, async () => {
+    const out = capture();
+    const err = capture();
+    let called = false;
+    let round = 0;
+    const seen = [];
+    const code = await runHeadless({ prompt: "compose tools", outputFormat, permissionMode: "manual" }, dependencies({
+      stdout: out.collect(new PassThrough()), stderr: err.collect(new PassThrough()), records: [],
+      settings: { skills: false, miro: { models: ["m1"], model: "m1", codemode: { enabled: true } } },
+      mcpRuntime: { enabled: true, callTool: async () => { called = true; return { output: "not allowed" }; }, close: async () => {} },
+      stream: async function* (request) {
+        seen.push(JSON.parse(JSON.stringify(request.messages)));
+        if (round++ === 0) yield { type: "tool_calls", calls: [{ id: "code-headless", name: "codemode", arguments: JSON.stringify({
+          code: 'text("internal-only"); await tools.mcp_call({server:"trusted",name:"echo",arguments:{value:"x"}})',
+        }) }] };
+        else yield { type: "text", text: "permission-denied" };
+      },
+    }));
+    assert.equal(code, 0);
+    assert.equal(called, false);
+    assert.match(err.value(), /denied permission request: MCP trusted \/ echo/);
+    assert.doesNotMatch(out.value(), /internal-only|Codemode|denied permission request/);
+    if (outputFormat === "json") {
+      const result = JSON.parse(out.value());
+      assert.equal(result.result, "permission-denied");
+      assert.deepEqual(result.permission_denials, [{ tool_call_id: "code-headless/nested-1", description: "MCP trusted / echo" }]);
+      assert.equal(out.value().trim().split("\n").length, 1);
+    } else assert.equal(out.value(), "permission-denied\n");
+    const results = seen[1].filter((message) => message.role === "tool");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].tool_call_id, "code-headless");
+    assert.match(results[0].content, /internal-only/);
+    assert.match(results[0].content, /rejected/);
+  });
+}

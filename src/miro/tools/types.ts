@@ -18,6 +18,7 @@ export interface ToolDefinition {
 
 export interface ToolResult {
   output?: string;
+  structuredContent?: unknown;
   error?: string;
   content?: any[];
   failed?: boolean;

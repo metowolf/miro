@@ -5,6 +5,7 @@
  * 装配执行器，以及与具体工具无关的参数解析和并发分批。
  */
 
+import { CODEMODE_DEFINITION, CODEMODE_TOOL_NAMES, codemodeTool } from "./codemode.ts";
 import { EDIT_FILE_DEFINITION, editFileTool } from "./edit-file.ts";
 import { GLOB_DEFINITION, globTool } from "./glob.ts";
 import { GREP_DEFINITION, grepTool } from "./grep.ts";
@@ -47,10 +48,10 @@ export const MAX_PARALLEL_TOOL_CALLS = 8;
 /**
  * 不允许「边收流边执行」的 kind。
  *
- * spawn_agent 起的是拥有共享审批通道的子智能体，循环层无法预判它会不会弹窗，
+ * spawn_agent 与 codemode 的内部调用可能共享审批通道，循环层无法预判会不会弹窗，
  * 因此一律留给流结束后的批处理阶段。
  */
-export const EAGER_BLOCKED_KINDS = new Set<any>(["spawn", "input", "plan"]);
+export const EAGER_BLOCKED_KINDS = new Set<any>(["spawn", "input", "plan", "codemode"]);
 
 /**
  * 这条调用能否在流里一出现就开跑。
@@ -85,6 +86,7 @@ export const TOOL_DEFINITIONS: import("./types.ts").ToolDefinition[] = [
   GLOB_DEFINITION,
   MCP_LIST_TOOLS_DEFINITION,
   MCP_CALL_DEFINITION,
+  CODEMODE_DEFINITION,
   SPAWN_AGENT_DEFINITION,
   UPDATE_TASKS_DEFINITION,
   UPDATE_GOAL_DEFINITION,
@@ -160,6 +162,7 @@ export function createToolRunners({
   goal = null,
   sandboxManager = null,
   sandboxEnabled = false,
+  codemodeEnabled = false,
   mcpRuntime = null,
   plan = null,
   requestPlanEntry = null,
@@ -212,6 +215,10 @@ export function createToolRunners({
   if (available.has("request_user_input")) runners.request_user_input = requestUserInputTool(requestUserInput);
   if (available.has("exit_plan_mode")) {
     runners.exit_plan_mode = exitPlanModeTool({ plan, requestReview: requestPlanReview });
+  }
+  if (codemodeEnabled && available.has("codemode")) {
+    const nested = TOOL_DEFINITIONS.filter((definition) => CODEMODE_TOOL_NAMES.has(definition.name) && runners[definition.name] != null);
+    runners.codemode = codemodeTool(nested);
   }
 
   return runners;

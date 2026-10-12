@@ -203,7 +203,8 @@ If `models.json` is missing or has no usable models, miro falls back to the `mir
     "protocol": "chat-completions",
     "effort": "medium",
     "thinking": true,
-    "sandbox": { "enabled": false }
+    "sandbox": { "enabled": false },
+    "codemode": { "enabled": false }
   }
 }
 ```
@@ -223,6 +224,14 @@ If `models.json` is missing or has no usable models, miro falls back to the `mir
 Use `/config sandbox on` or `/config sandbox off` to update this setting and switch the command tool's sandboxing in the current session.
 
 `/model` and `/effort` choices are remembered per provider. Miro uses top-level `model` / `effort` in `settings.json`, and records the model as `provider/id`; an ACP provider uses its own `providers.<id>` entry. The `model` / `effort` entries inside `miro` are fallback defaults when the top-level preference is absent or unavailable. Miro's `Default` / `Plan` interaction mode is independent from its `Auto` / `Manual` permission mode; `Shift+Tab` cycles the interaction mode.
+
+### Codemode (experimental)
+
+Codemode is off by default and available only to the built-in Miro agent. Use `/config codemode on` to enable it or `/config codemode off` to disable it; both update `miro.codemode.enabled` in `settings.json`. Set it to `true` before starting a print-mode run. Normal tools remain available.
+
+The model can compose reads, searches, paging and aggregation in one JavaScript script inside an isolated QuickJS Worker, returning only selected output to its context. Scripts can call `read_file`, `grep`, `glob` and configured MCP bridges; disabled tools stay unavailable. They have no host `process`, `fetch`, file writes, Terminal or subagent access. Each actual MCP call still follows the normal permission policy, including denial in non-interactive Manual mode, and internal calls remain visible in the transcript.
+
+Each script has a 60-second VM limit, a 64 MiB QuickJS heap, at most 64 tool calls and eight concurrent reads, with separate tool-data and output budgets. Scripts must await their calls. Cancellation and timeout wait for host cleanup but cannot undo remote effects; failed scripts are never automatically replayed. See the [tool reference](./docs/tools/codemode.md) for the exact API and limits. This is separate from the Terminal sandbox and does not change ACP providers.
 
 ### MCP
 

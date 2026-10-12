@@ -34,8 +34,9 @@ export const MCP_CALL_DEFINITION = {
 
 export function mcpListToolsTool(runtime) {
   return async (input, { signal }: any = {}) => {
-    const output = JSON.stringify(await runtime.listTools(input, { signal }), null, 2);
-    return { output, content: textContent(output) };
+    const structuredContent = await runtime.listTools(input, { signal });
+    const output = JSON.stringify(structuredContent, null, 2);
+    return { output, content: textContent(output), structuredContent };
   };
 }
 

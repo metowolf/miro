@@ -50,6 +50,9 @@ import {
   toolDefinition,
   toolSchemas,
 } from "./tools/index.ts";
+import { createToolExecution } from "./tools/tool-execution.ts";
+import { truncate } from "./tools/shared.ts";
+import { CODEMODE_TOOL_NAMES, codemodeDefinition } from "./tools/codemode.ts";
 import {
   DEFAULT_TOOL_RESULT_BUDGET,
   applyToolResultBudget,
@@ -129,19 +132,6 @@ function toolCallId(round, index) {
 
 /** 中断导致某个工具调用没有真实结果时，回灌给模型的占位内容。 */
 const INTERRUPTED_TOOL_OUTPUT = "The user interrupted the turn before this tool call ran.";
-
-/**
- * 用户拒绝或取消后追加的下一步。
- *
- * 只说「被拒绝」的话，模型下一轮多半把同一个调用原样再发一遍；tool-result-budget
- * 的桩文本与 planGuard 的拒绝理由都遵循同一条约定——拒绝必须给替代动作。
- */
-const REJECTED_TOOL_OUTPUT_SUFFIX =
-  "Do not repeat the same call unchanged; change the approach or ask the user what they want instead.";
-
-/** Auto 拒绝后只能改用更安全的动作，不能把决定重新抛给用户。 */
-const AUTO_REJECTED_TOOL_OUTPUT_SUFFIX =
-  "Do not repeat the same call unchanged and do not ask the user to approve it; choose a safer approach.";
 
 /**
  * 工具已经跑完、回合随后才被中断时，附在真实结果后面的说明。
@@ -472,9 +462,9 @@ export async function runAgentLoop({
   const disabledTools = new Set<any>(Array.isArray(config.disabledTools) ? config.disabledTools : []);
   // 旧设置里存的 `run_command` 是同一个命令工具的曾用名，改名后不能失效。
   if (disabledTools.has("run_command")) disabledTools.add("terminal");
-  const allowedTools = Array.isArray(config.tools)
-    ? config.tools
-    : definitions.map((definition) => definition.name).filter((name) => !disabledTools.has(name));
+  const allowedTools = (Array.isArray(config.tools) ? config.tools : definitions.map((definition) => definition.name))
+    .filter((name) => !disabledTools.has(name))
+    .filter((name) => name !== "codemode" || config.codemodeEnabled === true);
   // 交互模式决定哪些工具这一轮不该出现在模型面前。逐条累积成一份屏蔽集合，
   // 免得「plan / default」与「interactive 与否」两个维度交叉成嵌套条件。
   const planActive = config.interactionMode === "plan";
@@ -533,6 +523,7 @@ export async function runAgentLoop({
     goal,
     sandboxManager: dependencies.sandboxManager,
     sandboxEnabled,
+    codemodeEnabled: config.codemodeEnabled === true,
     mcpRuntime: dependencies.mcpRuntime,
     plan: config.plan ?? null,
     requestPlanEntry: handlers.requestPlanEntry,
@@ -550,6 +541,13 @@ export async function runAgentLoop({
   const schemas = allSchemas
     .filter((schema) => modeAllowedTools.includes(schema?.function?.name))
     .filter((schema) => runners[schema?.function?.name] != null);
+  const scriptDefinitions = definitions.filter((definition) => CODEMODE_TOOL_NAMES.has(definition.name) &&
+    schemas.some((schema) => schema.function.name === definition.name));
+  if (runners.codemode) {
+    const definition = await codemodeDefinition(scriptDefinitions);
+    const index = schemas.findIndex((schema) => schema.function.name === "codemode");
+    if (index >= 0) schemas[index] = { type: "function", function: { name: definition.name, description: definition.description, parameters: definition.parameters } };
+  }
 
   let cancelled = false;
   // 工具要求本回合就此收尾（update_goal 宣布终态、预算触顶）。与 cancelled
@@ -716,104 +714,52 @@ export async function runAgentLoop({
     /** 工具首次出现在界面上时发的 tool_call。 */
     const emitPending = (item) => emitTool("tool_call", item, "pending");
 
-    /**
-     * 执行前的同步/审批阶段。
-     *
-     * 必须与执行阶段分开：审批是模态 UI，两个弹窗同时打开无法呈现。所以哪怕
-     * 后续要并行执行，这一步也严格按模型给出的顺序逐个 await。
-     *
-     * @returns {Promise<boolean>} true 表示放行到执行阶段
-     */
+    const execution = createToolExecution({
+      runners, decide: permissionDecision, getPermissionMode, cwd: config.cwd,
+      alwaysAllowed, alwaysRejected, requestPermission, permissionOptions,
+      riskReviewer, stream, requestOptions, onAutoReview: handlers.onAutoReview,
+    });
     const authorize = async (item) => {
-      if (!item.parsed.ok) {
-        const output = `Tool arguments are not valid JSON: ${item.parsed.error}`;
-        answer(item.id, output);
-        emit(item, "failed", { content: textContent(output) });
-        return false;
+      const authorization = await execution.authorize(item, signal);
+      if (!authorization.allowed) {
+        answer(item.id, authorization.result.output);
+        emit(item, authorization.status, { content: authorization.result.content });
       }
+      return authorization.allowed;
+    };
 
-      if (!runners[item.name]) {
-        const output = `Unknown tool "${item.name}".`;
-        answer(item.id, output);
-        emit(item, "failed", { content: textContent(output) });
-        return false;
+    /** 嵌套调用只有可审计的工具事件，不制造孤立的模型 tool 消息。 */
+    const executeNested = (parent) => async (definition, rawInput, { signal: nestedSignal, index }) => {
+      if (!scriptDefinitions.some((entry) => entry.name === definition.name) || !runners[definition.name]) {
+        return { error: `Tool "${definition.name}" is unavailable in this codemode capability set.` };
       }
-
-      const decision = permissionDecision({
-        item,
-        mode: getPermissionMode(),
-        cwd: config.cwd,
-        alwaysAllowed,
-        alwaysRejected,
-        sandboxEnabled,
-      });
-
-      // Manual 的会话级拒绝在任何审批之前生效；Auto 不读取这份人工授权缓存。
-      if (decision.rejected) {
-        answer(item.id, `The user rejected this tool call. ${REJECTED_TOOL_OUTPUT_SUFFIX}`);
-        emit(item, "cancelled");
-        return false;
-      }
-
-      // Auto 只审查 Terminal 明确自报的 high 与 sandbox:false。审查器的
-      // 同意只对这次调用有效；任何异常或不确定都直接拒绝，绝不回退询问用户。
-      if (decision.autoReview) {
-        handlers.onAutoReview?.({ toolCallId: item.id, status: "checking", action: item.title ?? item.name });
-        const review = await riskReviewer({
-          stream,
-          requestOptions,
-          item,
-          decision,
-          cwd: config.cwd,
-          signal,
+      const item = { id: `${parent.id}/nested-${index}`, name: definition.name, kind: definition.kind,
+        title: definition.name === "mcp_call" ? `MCP ${rawInput.server} / ${rawInput.name}` : definition.title,
+        rawInput, toolInput: rawInput, parsed: { ok: true }, flag: { parentToolCallId: parent.id } };
+      emitPending(item);
+      try {
+        const authorization = await execution.authorize(item, nestedSignal);
+        if (!authorization.allowed) {
+          emit(item, authorization.status, { content: authorization.result.content });
+          return authorization.result;
+        }
+        nestedSignal.throwIfAborted();
+        emit(item, "in_progress");
+        const result = await execution.run(item, { signal: nestedSignal, toolCallId: item.id });
+        // 嵌套结果不进入模型历史；审计也只留有界文本，不能绕过 VM 数据预算。
+        emit(item, nestedSignal.aborted ? "cancelled" : result.error || result.failed ? "failed" : "completed", {
+          content: textContent(truncate(result.error ?? result.output ?? "", 32_768)), locations: result.locations ?? null,
         });
-        if (review?.approved === true) {
-          handlers.onAutoReview?.({ toolCallId: item.id, status: "allowed", action: item.title ?? item.name, reason: review.reason });
-          return true;
-        }
-        const reason = review?.reason ?? "Risk reviewer could not reach a safe decision.";
-        handlers.onAutoReview?.({ toolCallId: item.id, status: "blocked", action: item.title ?? item.name, reason });
-        answer(item.id, `Auto safety review blocked this tool call: ${reason} ${AUTO_REJECTED_TOOL_OUTPUT_SUFFIX}`);
-        emit(item, "cancelled");
-        return false;
+        return result;
+      } catch (error) {
+        const result = { error: `${definition.name}: ${error?.message ?? String(error)}` };
+        emit(item, nestedSignal.aborted ? "cancelled" : "failed", { content: textContent(result.error) });
+        return result;
       }
-
-      if (decision.prompts) {
-        const optionId = await requestPermission({
-          options: permissionOptions(),
-          toolCall: {
-            toolCallId: item.id,
-            name: item.name,
-            title: item.title,
-            kind: item.kind,
-            rawInput: item.rawInput,
-            content: null,
-            locations: null,
-          },
-        });
-
-        if (decision.canPersistApproval && optionId === "allow_session") {
-          alwaysAllowed.add(decision.scope);
-        }
-        if (optionId === "reject_always") alwaysRejected.add(decision.scope);
-
-        if (optionId !== "allow_once" && !(decision.canPersistApproval && optionId === "allow_session")) {
-          const denied = optionId == null ? "cancelled" : "rejected";
-          answer(item.id, `The user ${denied} this tool call. ${REJECTED_TOOL_OUTPUT_SUFFIX}`);
-          emit(item, optionId == null ? "cancelled" : "failed");
-          return false;
-        }
-      }
-
-      return true;
     };
 
     /** 真正跑 runner 并落地结果。此函数可被多个调用并发进入。 */
     const execute = async (item) => {
-      // 标记「runner 真的被调用过」。截断/中断时 keepExecutedPrefix 靠它区分
-      // 「已经产生副作用的调用」与「被拦下、根本没跑的调用」。
-      item.executed = true;
-
       // 子智能体的中间过程通过快照流式上报。sink 按 toolCallId 注册，
       // 因此并行的多个子智能体各自更新自己那一行，互不干扰。
       if (item.isSubagent) {
@@ -822,8 +768,8 @@ export async function runAgentLoop({
         });
       }
 
-      const result: import("./tools/types.ts").ToolResult = await runners[item.name](item.rawInput, { signal, sinkId: item.id, toolCallId: item.id })
-        .catch((error) => ({ error: `${item.name}: ${error?.message ?? String(error)}` }))
+      const result = await execution.run(item, { signal, sinkId: item.id, toolCallId: item.id,
+        ...(item.name === "codemode" ? { executeNested: executeNested(item), codemodeDefinitions: scriptDefinitions } : {}) })
         .finally(() => {
           if (item.isSubagent) snapshotSinks.delete(item.id);
         });
@@ -844,7 +790,7 @@ export async function runAgentLoop({
       if (result?.stopTurn === true) stopRequested = true;
       if (result?.transition != null) stopTransition = result.transition;
 
-      const interruptionNotice = item.name === "mcp_call"
+      const interruptionNotice = item.name === "mcp_call" || item.name === "codemode"
         ? "The turn was interrupted. Remote MCP effects may have occurred; verify the outcome before retrying."
         : INTERRUPTED_AFTER_TOOL_OUTPUT;
       answer(

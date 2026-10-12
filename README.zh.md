@@ -203,7 +203,8 @@ miro 用到的上游写在 `~/.miro/models.json`。打开 `/model` 会重新读�
     "protocol": "chat-completions",
     "effort": "medium",
     "thinking": true,
-    "sandbox": { "enabled": false }
+    "sandbox": { "enabled": false },
+    "codemode": { "enabled": false }
   }
 }
 ```
@@ -223,6 +224,14 @@ miro 用到的上游写在 `~/.miro/models.json`。打开 `/model` 会重新读�
 可用 `/config sandbox on` 或 `/config sandbox off` 持久化修改这个开关，并立即切换当前会话命令工具的沙箱状态。
 
 `/model` 与 `/effort` 的选择按提供方分别记忆。`miro` 使用 `settings.json` 顶层的 `model` / `effort`，其中 `model` 记为 `provider/id`；ACP 提供方则存在自己的 `providers.<id>` 条目里。`miro` 对象里的 `model` / `effort` 只在顶层偏好缺省或匹配不到时作为回退默认值。miro 的 `Default` / `Plan` 交互模式与 `Auto` / `Manual` 权限模式相互独立；`Shift+Tab` 循环交互模式。
+
+### Codemode（实验性）
+
+Codemode 默认关闭，仅适用于内置 Miro agent。用 `/config codemode on` 开启、`/config codemode off` 关闭，两者都会修改 `settings.json` 的 `miro.codemode.enabled`。Print 模式需在启动前将它设为 `true`。普通工具仍然保留。
+
+模型可在独立 QuickJS Worker 内用一段 JavaScript 组合读取、搜索、分页和聚合，只把选定输出交回上下文。脚本能调用 `read_file`、`grep`、`glob` 和已配置的 MCP 桥接，禁用工具不会重新开放；没有宿主 `process`、`fetch`、写文件、Terminal 或 subagent 能力。每次实际 MCP 调用仍遵循普通权限策略，非交互 Manual 会拒绝调用，内部调用保留在 transcript 中。
+
+每段脚本的 VM 时限为 60 秒、QuickJS 堆为 64 MiB，最多调用 64 次工具、并发读取 8 条，另有工具数据和输出预算。脚本必须 await 工具调用。取消与超时会等待宿主收尾，但不能撤销远端副作用；失败脚本不会自动重放。精确 API 和限制见[工具参考](./docs/tools/codemode.md)。它与 Terminal 沙箱相互独立，不改变 ACP 提供方行为。
 
 ### MCP
 

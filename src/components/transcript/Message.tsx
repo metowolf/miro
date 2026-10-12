@@ -4,6 +4,7 @@ import { memo } from "react";
 import { formatTokens, subagentDisplay } from "../../transcript/subagent.ts";
 import { TERMINAL_STATUSES } from "../../transcript/tool-title.ts";
 import { autoReviewNote } from "../../transcript/auto-review-note.ts";
+import { toolForDisplay } from "../../transcript/tool-display.ts";
 import {
   BLACK_CIRCLE,
   TREE_BLANK_PREFIX,
@@ -333,9 +334,12 @@ function ToolMessage({ block, reviewHint, width }: any) {
 export const Message = memo(function Message({ block, reviewHint = false, width }: any) {
   if (block.role === "banner") return <Banner />;
   if (block.role === "bashCard" && block.card) return <BashCard card={block.card} />;
-  if (block.role === "tool" && block.tool?.subagent) return <SubagentMessage block={block} />;
   if (block.role === "tool" && block.tool) {
-    return <ToolMessage block={block} reviewHint={reviewHint} width={width} />;
+    const tool = toolForDisplay(block.tool);
+    if (!tool) return null;
+    const visibleBlock = tool === block.tool ? block : { ...block, tool };
+    if (tool.subagent) return <SubagentMessage block={visibleBlock} />;
+    return <ToolMessage block={visibleBlock} reviewHint={reviewHint} width={width} />;
   }
   if (block.role === "plan" && block.plan) return <PlanMessage block={block} />;
   if (block.role === "proposedPlan") return <ProposedPlanMessage block={block} />;

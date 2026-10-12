@@ -64,6 +64,16 @@ src/cli.ts-121- return provider ?? "miro";
   - 出现长行截断：`[Some lines truncated to 500 chars. Use read_file to see full lines]`
 - 一条都没命中时输出 `No matches found`（不是空字符串，模型能明确知道搜索跑过了）。
 
+## 程序化结果
+
+成功时附 `structuredContent: { path, matches, truncated, skippedFiles }`，codemode 中为 `result.data`。
+每条 match 为 `{ path, line, text, truncated }`，行号从 1 计，只包含命中行，不混入 context 行。
+目录搜索的 match.path 相对搜索根；显式单文件搜索时是该文件 basename，根 path 是文件的绝对路径。
+`text` 沿用 500 字符行截断，match.truncated 标记这一行是否被裁剪。
+整体 truncated 在命中数量触顶、命中行被裁剪或有文件未能搜索时为 true。
+`skippedFiles` 统计 stat/读取失败、过大和二进制文件，不计正常忽略项与目录。
+展示正文的上下文和 30 000 字符裁剪不影响程序化匹配列表。
+
 ## 什么时候用它
 
 - 找符号定义、调用点、文案出现位置：比先 `glob` 列文件再逐个 `read_file` 省上下文。

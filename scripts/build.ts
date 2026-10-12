@@ -33,10 +33,13 @@ const pkg = JSON.parse(
 );
 
 const result = await Bun.build({
-  entrypoints: ["src/main.ts"],
+  // Worker 必须是独立入口；QuickJS WASM 通过运行时的 file import 嵌入/复制。
+  entrypoints: ["src/main.ts", "src/miro/tools/codemode-worker.ts"],
+  naming: { entry: "[name].js", chunk: "chunk-[hash].js", asset: "[name]-[hash].[ext]" },
   plugins: [stubDevtools],
   define: {
     __MIRO_VERSION__: JSON.stringify(pkg.version),
+    __MIRO_BUNDLED__: "true",
   },
   // minify 会破坏 Ink 依赖的函数名/组件名，这里保持关闭。
   // format: "esm" —— compile 路径下 Bun 默认按 CJS 解析，入口的顶层 await 会直接报错。
@@ -69,4 +72,4 @@ if (!result.success) {
   process.exit(1);
 }
 
-console.log(compile ? `Built binary: ${outfile}` : "Bundled: dist/main.js (+ dist/chunk-*.js)");
+console.log(compile ? `Built binary: ${outfile}` : "Bundled: dist/main.js (+ chunks, codemode-worker.js, QuickJS WASM)");

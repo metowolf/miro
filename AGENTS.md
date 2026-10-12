@@ -51,7 +51,7 @@ bun check                       # TypeScript 语法与类型检查，不生成�
 bun start                       # 从源码启动 TUI
 bun start -- -p "explain this"  # CLI 参数放在 -- 之后
 bun run build                   # 编译本机 dist/miro 单文件二进制
-bun run build:js                # 只打包 dist/main.js 与 dist/chunk-*.js（不编译，便于排查产物）
+bun run scripts/build.ts --no-compile  # 打包 JS、chunks、codemode Worker 与 WASM
 bun run tui                     # 运行已编译的二进制
 
 bun test                        # 默认测试发现
@@ -72,6 +72,8 @@ bun test ./test/paste-block.render.smoke.ts
 
 `bun run build` 走 `scripts/build.ts`：注入 `__MIRO_VERSION__`、关闭 minify（Ink 依赖组件名）、用插件 stub 掉 Ink 的可选依赖 `react-devtools-core`、关闭 `autoloadBunfig`，并用 `bytecode: true` 把 bundle 预编译成字节码嵌进二进制，冷启动因此减半（代价是体积约 +8MB）。`splitting: true` 让 `src/main.ts` 的按需 import 真的切成独立 chunk：Bun 默认不分块，会把 tui / headless 整棵图内联进入口，入口于是必须先加载 3 MB 才轮到 `--help` 短路；分块后 `--help` 约 26ms → 6ms，重路径因为 chunk 更小反而略快（TUI 首帧约 86ms → 80ms，`-p` 约 28ms → 20ms），产物还小了约 1MB。`--no-compile` 同样分块，dist/main.js 必须和 dist/chunk-*.js 待在同一目录。交叉编译用 `bun run scripts/build.ts --target bun-linux-x64 --outfile dist/miro-linux-amd64`。
 
+Codemode 的 QuickJS 依赖必须保持按需加载：未开启时不加载声明生成器，未执行时不加载 VM/WASM。`scripts/build.ts` 将 `src/miro/tools/codemode-worker.ts` 作为第二个入口；运行时按 `import.meta.url` 定位输出入口 `codemode-worker.js` 和 file import 的 WASM，编译版从 `/$bunfs` 取资源，不能再引用源码入口或依赖 `node_modules` 相邻文件。JS bundle 的 main、chunks、Worker 与 WASM 必须放在同一目录。改构建定位后，依次跑 `bun run scripts/build.ts --no-compile`、`bun run build`、`bun test ./test/codemode-build.smoke.ts`；该 smoke 用本机假模型和隔离 HOME，从不同 cwd 执行源码、搬离项目的 JS 包和只含二进制的目录，不依赖真实模型或用户配置，也不在默认测试发现内。
+
 ## 测试与 CI
 
 - 单元测试一般与源码同目录放在 `src/` 下；跨模块、TTY 与 smoke 测试放 `test/`。
@@ -79,7 +81,7 @@ bun test ./test/paste-block.render.smoke.ts
 - **不要写 tmux 端到端测试**（历史上的 `test/*.tmux.test.js` 与 `test/helpers/tmux-tui.js`、`test/fixtures/fake-acp.py`、`test/fixtures/fake-llm.py` 已整体移除）：不要用 tmux 或真实 TTY pane 驱动 TUI 再断言画面、控制序列或退出行为，也不要重新引入这类辅助层与 fixture。它依赖 tmux / python3 / Unix socket、慢且爱 flaky，还会把测试和渲染细节绑死。UI 是否画对没有自动化兜底，改完手动跑 `bun start` / `bun run tui` 目视确认。
 - 组件里的逻辑要覆盖时，先把它抽成不依赖 React/Ink 的纯函数再测：`src/components/picker/picker-*.ts`、`src/components/picker/picker-viewport.ts`、`src/input/use-input-cursor.ts` 的 `caretPosition`、`App.tsx` 的 `isClockRunning` / `refreshActiveGoal` 都是这么来的，组件文件本身只留接线。
 - `test/paste-block.render.smoke.ts` 是唯一直接渲染组件的脚本（手动运行，不在 `bun test` 发现内），必须显式设定终端尺寸（`process.stdout.columns/rows`）。
-- CI（`.github/workflows/ci.yml`）跑 `bun check` → `bun test` → 三条 smoke 各自独立一步 → `bun run build`；`release.yml` 只在打 `v*` tag 时跑 `bun check`、`bun test` 并交叉编译四个平台。
+- CI（`.github/workflows/ci.yml`）跑 `bun check` → `bun test` → 三条原有 smoke 各自独立一步 → `bun run build` → JS bundle → codemode 构建 smoke；`release.yml` 只在打 `v*` tag 时跑 `bun check`、`bun test` 并交叉编译四个平台。
 
 改 transcript 或组件时，先跑 `src/transcript/store.test.ts` 与最近的纯逻辑测试；画面本身不上自动化，也不要回头补渲染用例或 tmux 用例，目视确认即可。
 
@@ -114,6 +116,8 @@ bun test ./test/paste-block.render.smoke.ts
 - 同一开关还会在每次模型请求前输出 `assembly`（system prompt + 工具 schema 的稳定指纹）、`context`（工具结果按工具归因的字节量），压缩成功时输出 `compaction`。这些诊断只含哈希、计数与字节量，不打印 prompt、工具正文或凭据。
 - miro 历史保存在 client 内；恢复时优先采用模型上下文检查点（压缩摘要、完整工具配对，不保存原始 thinking），旧会话回退到可见 transcript；找不到可用历史才重建启动上下文。`/compact` 复用自动压缩执行器，但独立于普通 prompt，空闲时执行且可取消。
 - 技能发现与 `/skill:<name>` 展开在 `src/miro/skills.ts` 与 `agent-client.ts`；ACP provider 自己管理技能。
+
+可选 `codemode`（`miro.codemode.enabled`，默认关闭）保留普通工具，只给 QuickJS 注入当前实际可用的读取、搜索与 MCP 桥接。`tool-execution.ts` 是普通与嵌套调用的公共授权/执行入口；内部 MCP 必须按真实参数审批，不允许整段脚本一次授权。外层 codemode 不抢跑且独占批次，内部连续读取最多 8 条并行、MCP 为串行屏障。内部只发带 `parentToolCallId` 的审计事件，模型历史只有外层的一条配对结果；取消、超时、return 都要停止排队并等在途宿主任务收尾，不能自动重放或宣称远端已回滚。
 
 ## 权限与工具
 

@@ -203,3 +203,18 @@ for (const phase of ["connect", "list"]) {
     } finally { await runtime.close(); }
   });
 }
+
+test("MCP 发现保留 outputSchema，调用保留并校验 structuredContent", async () => {
+  const outputSchema = { type: "object", properties: { count: { type: "integer" } }, required: ["count"], additionalProperties: false };
+  const catalog = [{ ...tools[0], outputSchema }, tools[1]];
+  let structuredContent: any = { count: 2 };
+  const { runtime } = fixture({ list: async () => catalog, call: async () => ({ content: [], structuredContent }) });
+  try {
+    const discovered = await runtime.listTools({ server: "local" });
+    assert.deepEqual(discovered.results[0].tools, catalog);
+    const result = await runtime.callTool({ server: "local", name: "echo", arguments: { value: "x" } });
+    assert.deepEqual(result.structuredContent, { count: 2 });
+    structuredContent = { count: "invalid" };
+    await assert.rejects(runtime.callTool({ server: "local", name: "echo", arguments: { value: "x" } }), /structured|output|schema/i);
+  } finally { await runtime.close(); }
+});

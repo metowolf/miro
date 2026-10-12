@@ -56,7 +56,17 @@
   `[one or more lines were truncated to 16 KiB; use grep or terminal for an exact long-line slice]`。
 - `offset` 超出文件末尾时报 `read: offset N is beyond end of file (M lines total)`。
 
-工具返回的 `content` 是这份文本，`locations` 是 `[{ path, line: offset + 1 }]`。
+## 程序化结果
+
+成功时附 `structuredContent`，codemode 中通过 `result.data` 读取：
+`{ path, content, offset, lineCount, nextOffset, truncated }`。
+`path` 是解析后的绝对路径；`content` 是本页行内容以 `\n` 拼接，不含行号与末尾提示，
+也不保留文件末尾换行，不能当成字节级完整原文。`offset` 从 0 计，`lineCount` 为本页行数；
+有后续页时 `nextOffset` 可直接用于下一次调用，到 EOF 为 `null`。
+`truncated` 在还有后续页或行内截断时为 true。空文件返回空 content、0 行和 null nextOffset。
+
+`ToolResult.content` 仍是上述带行号和提示的展示正文，不是 `structuredContent.content`；
+`locations` 是 `[{ path, line: offset + 1 }]`。
 
 ## 限制
 

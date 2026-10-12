@@ -805,24 +805,33 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
             params.toolCall?.rawInput?.sub_content ??
             null,
         };
+        let settled = false;
+        const finish = (optionId) => {
+          if (settled) return;
+          settled = true;
+          params.signal?.removeEventListener("abort", onAbort);
+          if (useStore.getState().overlay?.resolve === resolveChoice) store.setOverlay(null);
+          resolve(optionId);
+        };
+        const onAbort = () => finish(null);
+        const resolveChoice = async (value) => {
+          if (settled) return;
+          const optionId = permissionOptionIdForChoice(options, value);
+          const chosen = options.find((option) => option.optionId === optionId);
+          let verdict = "Cancelled";
+          if (chosen) verdict = chosen.kind?.startsWith("allow") ? "Allowed" : "Denied";
+          store.push("system", `${verdict}: ${toolCall.command ?? toolCall.title ?? "tool call"}`);
+          finish(optionId);
+        };
         store.setOverlay({
           kind: "permission",
           toolCall,
           escapeValue: reject?.optionId ?? null,
           items: buildPermissionDialogItems(options),
-          resolve: async (value) => {
-            const optionId = permissionOptionIdForChoice(options, value);
-            const chosen = options.find((option) => option.optionId === optionId);
-            let verdict = "Cancelled";
-            if (chosen) verdict = chosen.kind?.startsWith("allow") ? "Allowed" : "Denied";
-            store.push(
-              "system",
-              `${verdict}: ${toolCall.command ?? toolCall.title ?? "tool call"}`
-            );
-            store.setOverlay(null);
-            resolve(optionId);
-          },
+          resolve: resolveChoice,
         });
+        params.signal?.addEventListener("abort", onAbort, { once: true });
+        if (params.signal?.aborted) onAbort();
       });
     client.onPlanEntryRequest = () =>
       new Promise<any>((resolve) => {

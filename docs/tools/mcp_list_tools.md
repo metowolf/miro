@@ -9,8 +9,11 @@
 
 `{}` 只列出服务的 `name`、`type`、连接状态及配置诊断，不建立连接，不返回 URL、命令或凭据。
 指定 `server` 时发现该服务的全部工具；非空 `query` 且未指定服务时搜索全部配置服务。
-查询结果按服务分组，每个工具包含 `name`、`description`、`inputSchema`；某个服务失败只在该服务结果里返回错误，不影响其余服务。
+查询结果按服务分组，每个工具包含 `name`、`description`、`inputSchema`，远端提供时还包含
+`outputSchema`；某个服务失败只在该服务结果里返回错误，不影响其余服务。
 
+成功结果同时保留原始发现对象为 `structuredContent`；codemode 中通过 `result.data` 访问，
+无需反解析格式化 JSON 的 `output`。能力、审批与连接策略不因脚本调用而改变。
 工具目录按连接缓存，pi-mcp 处理协议握手、分页与游标循环检查；服务发出工具目录变化通知时会清空旧校验器并在下次查询时重新读取目录。
 连接默认超时 10 秒，完整分页发现默认超时 60 秒，可以通过服务配置的 `connectTimeoutMs` 与 `timeoutMs` 调整。
 

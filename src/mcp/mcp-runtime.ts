@@ -43,7 +43,8 @@ export function normalizeMcpResult(result) {
   }
   if (result?.structuredContent != null) parts.push(JSON.stringify(result.structuredContent, null, 2));
   if (parts.length === 0) parts.push(result?.isError ? "MCP tool reported an error." : "MCP tool completed with no text output.");
-  return { output: parts.join("\n\n"), failed: result?.isError === true };
+  return { output: parts.join("\n\n"), failed: result?.isError === true,
+    ...(result?.structuredContent != null ? { structuredContent: result.structuredContent } : {}) };
 }
 
 /** 一份 runtime 属于一个会话；主/隔离/子回合共享连接，不自动重放失败的调用。 */
@@ -203,7 +204,7 @@ export class McpRuntime {
         return await this.withServer(server, signal, async (entry, config) => {
           const tools = await this.catalog(entry, config, signal);
           return { server, tools: tools.filter((tool) => `${tool.name}\n${tool.description ?? ""}`.toLowerCase().includes(query))
-            .map(({ name, description, inputSchema }: any) => ({ name, description, inputSchema })) };
+            .map(({ name, description, inputSchema, outputSchema }: any) => ({ name, description, inputSchema, ...(outputSchema ? { outputSchema } : {}) })) };
         });
       } catch (error) {
         this.checkSignal(signal);

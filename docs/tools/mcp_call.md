@@ -29,4 +29,9 @@ OAuth 可通过 `miro mcp login` 或 `/mcp` 登录。MCP 仅提供 `mcp_list_too
 OAuth 登录校验回调的授权服务器身份（`iss` 存在或服务器声明要求时），校验失败不会交换授权码。
 令牌响应中的空字符串或 null 权限视为缺省，缺省时保留请求权限；追加授权会合并此前已授予的权限。
 
+远端提供 `structuredContent` 时，除格式化展示外还原样保留为独立字段，codemode 中是 `result.data`；
+没有时 `data` 为 `null`，不能假设所有服务都返回结构化对象。远端声明 `outputSchema` 时，
+成功调用还需返回符合 schema 的 structuredContent，否则报工具失败。内部调用仍逐次审批，
+脚本组合不等于对所有 MCP 动作整段授权。
+
 大结果处理、事件和一一配对的历史回填遵循 [公共约定](./README.md)。

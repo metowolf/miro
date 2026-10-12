@@ -48,6 +48,14 @@ src/main.ts
 - 一条都没找到时输出 `No files found matching pattern`。
 - 模式本身非法时返回 `glob: invalid pattern: <原因>`（例如括号不闭合）。
 
+## 程序化结果
+
+成功时附 `structuredContent: { path, paths, truncated }`，codemode 中为 `result.data`。
+`path` 是绝对搜索根，`paths` 是按路径排序、相对该根的文件名，不混入上限提示。
+没有结果时 `paths` 为空数组；达到数量上限时 `truncated` 为 true。
+仅展示正文超过 30 000 字符时不会改变数据里的完整已收集路径数组或截断标记。
+读取文件时应把搜索根和相对路径拼起来，不假设搜索根就是工作区。
+
 ## 与其他工具的分工
 
 | 想做的事 | 用哪个 |

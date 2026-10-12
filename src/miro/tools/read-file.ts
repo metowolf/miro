@@ -63,7 +63,8 @@ function clipUtf8(text, maxBytes) {
 }
 
 /** 逐块读取，绝不把整个文件或单条超长行留在内存中。 */
-async function readTextRange(path, offset, limit) {
+async function readTextRange(path, offset, limit, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const handle = await open(path, "r");
   try {
     const sample = Buffer.alloc(BINARY_SAMPLE_BYTES);
@@ -73,6 +74,7 @@ async function readTextRange(path, offset, limit) {
     const decoder = new TextDecoder("utf-8");
     const buffer = Buffer.alloc(64 * 1024);
     const rows = [];
+    const plainLines: string[] = [];
     let position = 0;
     let lineNumber = 0;
     let currentLine = "";
@@ -110,12 +112,14 @@ async function readTextRange(path, offset, limit) {
         return;
       }
       rows.push(label);
+      plainLines.push(line);
       outputBytes += size;
       currentLine = "";
       currentLineClipped = false;
     };
 
     while (!stopped) {
+      signal?.throwIfAborted();
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
       if (bytesRead === 0) break;
       position += bytesRead;
@@ -141,7 +145,7 @@ async function readTextRange(path, offset, limit) {
     }
 
     if (rows.length === 0) {
-      if (lineNumber === 0 && offset === 0) return { output: "[empty file]" };
+      if (lineNumber === 0 && offset === 0) return { output: "[empty file]", structuredContent: { path, content: "", offset: 0, lineCount: 0, nextOffset: null, truncated: false } };
       return { error: `read: offset ${offset} is beyond end of file (${lineNumber} lines total)` };
     }
 
@@ -153,7 +157,10 @@ async function readTextRange(path, offset, limit) {
     const clippingNotice = linesClipped
       ? `\n[one or more lines were truncated to ${READ_MAX_LINE_BYTES / 1024} KiB; use grep or terminal for an exact long-line slice]`
       : "";
-    return { output: `${rows.join("\n")}\n\n${notice}${clippingNotice}` };
+    return {
+      output: `${rows.join("\n")}\n\n${notice}${clippingNotice}`,
+      structuredContent: { path, content: plainLines.join("\n"), offset, lineCount: rows.length, nextOffset: more ? lastLine : null, truncated: more || linesClipped },
+    };
   } finally {
     await handle.close();
   }
@@ -161,7 +168,8 @@ async function readTextRange(path, offset, limit) {
 
 /** Read：按行和 UTF-8 字节预算分页读取文本文件。 */
 export function readTool(cwd) {
-  return async (input) => {
+  return async (input, { signal }: any = {}) => {
+    signal?.throwIfAborted();
     const rawPath = typeof input?.path === "string" && input.path.trim() ? input.path : null;
     if (!rawPath) return { error: "read: missing required parameter 'path'" };
     const parsedOffset = inputInteger(input?.offset, "offset", { defaultValue: 0, min: 0, max: Number.MAX_SAFE_INTEGER });
@@ -185,7 +193,7 @@ export function readTool(cwd) {
 
     let result;
     try {
-      result = await readTextRange(path, parsedOffset.value, parsedLimit.value);
+      result = await readTextRange(path, parsedOffset.value, parsedLimit.value, signal);
     } catch (error) {
       // stat 与打开文件之间可能被删除或改权限；工具错误要回灌给模型而非打断循环。
       return { error: `read: cannot read ${path}: ${error.message}` };
@@ -194,6 +202,7 @@ export function readTool(cwd) {
 
     return {
       output: result.output,
+      structuredContent: result.structuredContent,
       content: textContent(result.output),
       locations: [{ path, line: parsedOffset.value + 1 }],
     };

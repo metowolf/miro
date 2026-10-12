@@ -157,6 +157,7 @@ export function buildConfigOptions({
   thinking,
   disabledTools = [],
   sandboxEnabled = false,
+  codemodeEnabled = false,
   protocol = DEFAULT_MIRO_PROTOCOL,
   includeProtocol = true,
 }: any) {
@@ -205,9 +206,19 @@ export function buildConfigOptions({
         { value: "on", name: "On" },
       ],
     }),
+    selectOption({
+      id: "codemode",
+      name: "Codemode (experimental)",
+      category: "tools",
+      currentValue: codemodeEnabled ? "on" : "off",
+      options: [
+        { value: "off", name: "Off" },
+        { value: "on", name: "On" },
+      ],
+    }),
   );
   const disabled = new Set<any>(normalizeDisabledTools(disabledTools));
-  const definitions = activeToolDefinitions(sandboxEnabled);
+  const definitions = activeToolDefinitions(sandboxEnabled).filter((definition) => definition.name !== "codemode" || codemodeEnabled);
   const disabledCount = definitions.filter((definition) => disabled.has(definition.name)).length;
   options.push({
     id: "tools",
@@ -352,6 +363,7 @@ export function readMiroConfig(settings: any = {}, { catalog = [], env = process
     thinking: config.thinking !== false,
     permissionMode: normalizePermissionMode(config.permissionMode),
     sandboxEnabled: config.sandbox?.enabled === true,
+    codemodeEnabled: config.codemode?.enabled === true,
     // 默认不限轮次：上下文由自动压缩兜底，硬上限只会把正常的长任务报成
     // max_turns。想止损的用户自己在 settings 里写数字。
     maxToolRounds: Number.isFinite(config.maxToolRounds) ? config.maxToolRounds : Infinity,

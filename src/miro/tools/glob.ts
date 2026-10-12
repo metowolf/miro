@@ -32,7 +32,8 @@ export const GLOB_DEFINITION = {
  * 参数：pattern / path / limit。
  */
 export function globTool(cwd) {
-  return async (input) => {
+  return async (input, { signal }: any = {}) => {
+    signal?.throwIfAborted();
     const pattern = typeof input?.pattern === "string" ? input.pattern : "";
     if (!pattern) return { error: "glob: missing required parameter 'pattern'" };
 
@@ -61,6 +62,7 @@ export function globTool(cwd) {
         withFileTypes: true,
         exclude: ignoreFilter.isIgnoredEntry,
       } as any)) {
+        signal?.throwIfAborted();
         const absolute = nodePath.join(entry.parentPath ?? (entry as typeof entry & { path?: string }).path, entry.name);
         if (ignoreFilter.isIgnoredPath(absolute, entry.isDirectory())) continue;
 
@@ -85,14 +87,15 @@ export function globTool(cwd) {
 
     if (matches.length === 0) {
       const output = "No files found matching pattern";
-      return { output, content: textContent(output) };
+      return { output, content: textContent(output), structuredContent: { path: searchRoot, paths: [], truncated: false } };
     }
 
     matches.sort((a, b) => a.localeCompare(b));
     const suffix = limitReached
       ? `\n\n[${limit} results limit reached. Use limit=${limit * 2} for more, or refine pattern]`
       : "";
-    const output = truncate(`${matches.join("\n")}${suffix}`, GLOB_MAX_OUTPUT);
-    return { output, content: textContent(output) };
+    const text = `${matches.join("\n")}${suffix}`;
+    const output = truncate(text, GLOB_MAX_OUTPUT);
+    return { output, content: textContent(output), structuredContent: { path: searchRoot, paths: matches, truncated: limitReached } };
   };
 }

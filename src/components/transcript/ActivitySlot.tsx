@@ -5,6 +5,7 @@ import { Box, Text, useWindowSize } from "ink";
 import { THOUGHT_PREVIEW_LINES, THOUGHT_STAT_SAMPLE_TICKS } from "../../config/config.ts";
 import { formatTokens } from "../../status-line/items.ts";
 import { toolFromGroup, useStore } from "../../transcript/store.ts";
+import { isVisibleTool } from "../../transcript/tool-display.ts";
 import {
   sampleThoughtTokens,
   splitThinkingText,
@@ -97,6 +98,12 @@ export function ActivitySlot({
   if (awaitingInput) return null;
   if (!busy && activeTools.length === 0 && !pendingToolGroup && !thought) return null;
 
+  // 编排包装层不占活动行，避免内部读取结束后又闪回 Codemode。
+  activeTools = activeTools.filter(isVisibleTool);
+  if (pendingToolGroup) {
+    const items = pendingToolGroup.items.filter(isVisibleTool);
+    pendingToolGroup = items.length > 0 ? { ...pendingToolGroup, items } : null;
+  }
   const bashTools = activeTools.filter(isBashTool);
   // 子智能体自带多行展开视图（工具行 + 摘要 + 状态行），折进「N tool calls」
   // 计数里就全看不见了。并行场景下这恰恰是最需要看的东西，所以把它们从可折叠

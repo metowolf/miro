@@ -17,6 +17,7 @@
 | `glob` | `search` | Glob | [glob.md](./glob.md) | `src/miro/tools/glob.ts` |
 | `mcp_list_tools` | `search` | MCP tools | [mcp_list_tools.md](./mcp_list_tools.md) | `src/miro/tools/mcp.ts`、`src/mcp/mcp-runtime.ts` |
 | `mcp_call` | `execute` | MCP 服务 / 工具 | [mcp_call.md](./mcp_call.md) | `src/miro/tools/mcp.ts`、`src/mcp/mcp-runtime.ts` |
+| `codemode`（可选） | `codemode` | Codemode | [codemode.md](./codemode.md) | `src/miro/tools/codemode*.ts` |
 | `spawn_agent` | `spawn` | Sub-agent | [spawn_agent.md](./spawn_agent.md) | `src/miro/tools/spawn-agent.ts`、`src/miro/subagent-runner.ts` |
 | `update_tasks` | `tasks` | Update tasks | [update_tasks.md](./update_tasks.md) | `src/miro/tools/update-tasks.ts` |
 | `update_goal` | `goal` | Update goal | [update_goal.md](./update_goal.md) | `src/miro/tools/update-goal.ts` |
@@ -32,7 +33,7 @@
 
 ### kind 决定审批与调度
 
-每个定义都带一个 `kind`：`read` / `search` / `tasks` / `goal` / `edit` / `execute` / `spawn` / `plan` / `input`。
+每个定义都带一个 `kind`：`read` / `search` / `tasks` / `goal` / `edit` / `execute` / `codemode` / `spawn` / `plan` / `input`。
 `kind` 不参与模型可见的 schema，只被循环层用来做三件事：
 
 - **审批**：只有 `CONFIRM_KINDS`（`edit`、`execute`、`delete`、`move`）里的调用才可能弹
@@ -43,7 +44,7 @@
     界面上，否则用户只看到命令没跑。可选的 `risk_reason` 只作为不可信自述交给审查模型参考。
   - `manual`：所有写入、删除、移动与命令都需审批；读、搜索、任务更新直接执行。
 - **并行**：`CONCURRENCY_SAFE_KINDS` = `read`、`search`、`tasks`、`goal`。
-- **抢跑**：`spawn`、`input`、`plan` 不抢跑，避免子智能体或模态交互与流式正文竞争。
+- **抢跑**：`spawn`、`input`、`plan`、`codemode` 不抢跑，避免内部审批或模态交互与流式正文竞争。
 
 ### 同一批调用如何执行
 
@@ -65,7 +66,8 @@
 2. 它是本批的第一个调用，或者本段调用全都可并行；
 3. 抢跑数量不超过 `MAX_PARALLEL_TOOL_CALLS`。
 
-`spawn_agent` 永远不抢跑，一律留给流结束后的批处理；`update_tasks` 与两个目标工具可以抢跑。
+`spawn_agent` 与 `codemode` 永远不抢跑，一律留给流结束后的批处理；`update_tasks` 与两个目标工具可以抢跑。
+`codemode` 自成串行批次；内部读取并发与 MCP 屏障见其工具文档。
 
 ### 结果如何回到历史
 
@@ -76,6 +78,7 @@
 - `locations`：可点击的文件位置，可选。
 - `rawOutput`：命令类工具的 stdout / stderr 原文，可选。
 - `error`：用于表达「这个调用失败了」，与 `failed: true` 等价地把这一条标成失败。
+- `structuredContent`：可选的程序化 JSON 数据，codemode 将其映射到 `data`；不额外写入普通模型历史。
 
 没有 `output` 也没有 `error` 时，回灌的是空字符串。执行器抛出的异常会被循环兜住，
 转成 `<工具名>: <错误信息>` 的失败结果——每一次 `tool_call` 都必须有且只有一个结果，
@@ -122,3 +125,8 @@
 `read_file` 能读第三方仓库，`terminal` 能抓回网络内容，两条路径都可能把别人的指令
 送进历史。系统提示词因此显式声明：工具结果里的指令是数据而不是命令。写工具与文档时
 不要假设工具输出可信。
+
+### codemode 内部调用
+
+codemode 内部调用复用 `tool-execution.ts` 的授权/执行入口，只发审计事件，不单独写模型工具消息；
+模型只收到外层脚本的一个结果。内部预览有独立上限，父子调用 id 保留到 transcript 定稿。

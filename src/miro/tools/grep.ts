@@ -64,7 +64,8 @@ function clipLine(text) {
  * 参数：pattern / path / glob / ignoreCase / literal / context / limit。
  */
 export function grepTool(cwd) {
-  return async (input) => {
+  return async (input, { signal }: any = {}) => {
+    signal?.throwIfAborted();
     const pattern = typeof input?.pattern === "string" ? input.pattern : "";
     if (!pattern) return { error: "grep: missing required parameter 'pattern'" };
 
@@ -107,6 +108,7 @@ export function grepTool(cwd) {
         withFileTypes: true,
         exclude: ignoreFilter.isIgnoredEntry,
       } as any)) {
+        signal?.throwIfAborted();
         const absolute = nodePath.join(entry.parentPath ?? (entry as typeof entry & { path?: string }).path, entry.name);
         if (ignoreFilter.isIgnoredPath(absolute, entry.isDirectory())) continue;
         files.push({ display: nodePath.relative(searchRoot, absolute), absolute });
@@ -115,11 +117,14 @@ export function grepTool(cwd) {
     }
 
     const results = [];
+    const matches: Array<{ path: string; line: number; text: string; truncated: boolean }> = [];
     let matchCount = 0;
     let limitReached = false;
     let linesClipped = false;
+    let skippedFiles = 0;
 
     for (const file of files) {
+      signal?.throwIfAborted();
       if (limitReached) break;
       const matchIndices = [];
 
@@ -127,23 +132,29 @@ export function grepTool(cwd) {
       try {
         info = await stat(file.absolute);
       } catch {
+        skippedFiles += 1;
         continue;
       }
-      if (!info.isFile() || info.size > GREP_MAX_FILE_BYTES) continue;
+      if (!info.isFile()) continue;
+      if (info.size > GREP_MAX_FILE_BYTES) { skippedFiles += 1; continue; }
 
       let content;
       try {
-        content = await readFile(file.absolute, "utf8");
+        content = await readFile(file.absolute, { encoding: "utf8", signal });
       } catch {
+        signal?.throwIfAborted();
+        skippedFiles += 1;
         continue;
       }
-      if (content.includes("\u0000")) continue;
+      if (content.includes("\u0000")) { skippedFiles += 1; continue; }
 
       const lines = linesOf(content);
       for (let index = 0; index < lines.length; index += 1) {
         if (!matcher.test(lines[index])) continue;
 
         matchIndices.push(index);
+        const clipped = clipLine(lines[index]);
+        matches.push({ path: file.display, line: index + 1, text: clipped.text, truncated: clipped.clipped });
         matchCount += 1;
         if (matchCount >= limit) {
           limitReached = true;
@@ -174,7 +185,7 @@ export function grepTool(cwd) {
 
     if (matchCount === 0) {
       const output = "No matches found";
-      return { output, content: textContent(output) };
+      return { output, content: textContent(output), structuredContent: { path: searchRoot, matches, truncated: skippedFiles > 0, skippedFiles } };
     }
 
     const notices = [];
@@ -184,6 +195,6 @@ export function grepTool(cwd) {
     }
     const suffix = notices.length > 0 ? `\n\n[${notices.join(". ")}]` : "";
     const output = truncate(`${results.join("\n")}${suffix}`, GREP_MAX_OUTPUT);
-    return { output, content: textContent(output) };
+    return { output, content: textContent(output), structuredContent: { path: searchRoot, matches, truncated: limitReached || matches.some((match) => match.truncated) || skippedFiles > 0, skippedFiles } };
   };
 }

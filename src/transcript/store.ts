@@ -28,6 +28,7 @@ import {
 } from "./thinking.ts";
 import { formatDuration, nextId } from "../utils.ts";
 import { extractToolDiff } from "./tool-diff.ts";
+import { summarizeToolCategories } from "./tool-display.ts";
 
 /** 挂在模块级，避免进入 React 订阅链路。 */
 let recorder = null;
@@ -274,7 +275,7 @@ function flushThought(state) {
  * 把待合并工具组转成渲染字段。
  * live=true 表示该组仍占据当前活动槽：耗时继续走，直到组被冲刷进历史。
  */
-export function toolFromGroup(group, { live = false, now = Date.now() }: any = {}) {
+export function toolFromGroup(group, { live = false, now = Date.now() }: any = {}): Record<string, any> {
   const failed = group.items.some((item) => item.status === "failed" || item.status === "cancelled");
   const liveStatus = failed ? "failed" : "pending";
   const liveElapsed = group.startedAt != null ? Math.max(0, now - group.startedAt) : null;
@@ -292,6 +293,8 @@ export function toolFromGroup(group, { live = false, now = Date.now() }: any = {
       detail: detail ?? null,
       diff: diff ?? null,
       autoReview: autoReview ?? null,
+      ...(group.items[0].toolCallId ? { toolCallId: group.items[0].toolCallId } : {}),
+      ...(group.items[0].parentToolCallId ? { parentToolCallId: group.items[0].parentToolCallId } : {}),
       reviewItems: group.items,
     };
   }
@@ -320,21 +323,6 @@ export function toolFromGroup(group, { live = false, now = Date.now() }: any = {
         : null,
     reviewItems: group.items,
   };
-}
-
-function summarizeToolCategories(items) {
-  const counts = new Map<any, any>();
-  for (const item of items) {
-    const name = String(item.label?.name ?? "Tool").toLowerCase();
-    const category = name === "bash"
-      ? "commands"
-      : `${name}${name.endsWith("s") ? "" : name.endsWith("ch") ? "es" : "s"}`;
-    counts.set(category, (counts.get(category) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => `${count} ${name}`)
-    .join(" · ");
 }
 
 /** 把待合并工具组定稿成一个块。 */
@@ -373,6 +361,8 @@ function finalizeTool(state, tool) {
     detail: tool.detail ?? null,
     diff: finalDiff,
     autoReview: tool.autoReview ?? null,
+    ...(tool.toolCallId ? { toolCallId: tool.toolCallId } : {}),
+    ...(tool.raw?.parentToolCallId ? { parentToolCallId: tool.raw.parentToolCallId } : {}),
   };
 
   let next = commitPending(state);
@@ -470,6 +460,7 @@ function mergeTool(state, payload) {
     rawInput: payload.rawInput,
     rawOutput: payload.rawOutput,
     locations: payload.locations,
+    parentToolCallId: payload.parentToolCallId,
   };
 
   if (!toolCallId) {

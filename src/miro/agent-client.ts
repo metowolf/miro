@@ -254,6 +254,7 @@ export class MiroAgentClient extends EventEmitter {
       thinking: this.config.thinking,
       disabledTools: this.config.disabledTools,
       sandboxEnabled: this.config.sandboxEnabled,
+      codemodeEnabled: this.config.codemodeEnabled,
       protocol: this.config.protocol,
       includeProtocol: !this.config.models.some((entry) => entry.fromCatalog),
     });
@@ -752,6 +753,7 @@ export class MiroAgentClient extends EventEmitter {
       autoCompact: this.config.autoCompact,
       disabledTools: this.config.disabledTools,
       sandboxEnabled: this.config.sandboxEnabled,
+      codemodeEnabled: this.config.codemodeEnabled,
       interactive: this.interactive,
       interactionMode: this.interactionMode,
       plan: this.interactionMode === "plan" ? { id: this.planId, path: this.planPath } : null,
@@ -1073,6 +1075,16 @@ export class MiroAgentClient extends EventEmitter {
       await (this.dependencies.writeSystemSettings ?? writeSystemSettings)(nextSettings);
       this.settings = nextSettings;
       this.config.sandboxEnabled = value === "on";
+    } else if (configId === "codemode") {
+      if (value !== "on" && value !== "off") throw new Error(`codemode "${value}" is not available`);
+      const miro = this.settings?.miro && typeof this.settings.miro === "object" && !Array.isArray(this.settings.miro)
+        ? this.settings.miro : {};
+      const codemode = miro.codemode && typeof miro.codemode === "object" && !Array.isArray(miro.codemode)
+        ? miro.codemode : {};
+      const nextSettings = { ...this.settings, miro: { ...miro, codemode: { ...codemode, enabled: value === "on" } } };
+      await (this.dependencies.writeSystemSettings ?? writeSystemSettings)(nextSettings);
+      this.settings = nextSettings;
+      this.config.codemodeEnabled = value === "on";
     } else if (configId.startsWith("tool:")) {
       const name = configId.slice("tool:".length);
       const known = this.configOptions

@@ -139,6 +139,7 @@ Options:
                        Terminal calls receive an isolated model review
   --mode <mode>        Interaction mode: default or plan. In print
                        mode, plan returns a visible plan without implementing it
+  -v, --version        Print the version and exit
   -h, --help           Print this help message
 
 Shortcuts:

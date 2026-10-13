@@ -10,7 +10,14 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "main.ts"), "utf8");
 
 /** 只允许入口静态依赖解析参数与打印帮助所需的最小集合。 */
-const ALLOWED_STATIC_IMPORTS = new Set<any>(["node:process", "./cli/cli.ts", "./config/config.ts", "./utils.ts"]);
+const ALLOWED_STATIC_IMPORTS = new Set<any>([
+  "node:process",
+  "./cli/cli.ts",
+  "./config/config.ts",
+  "./utils.ts",
+  // Node 运行时垫片：Bun 路径下整个模块只做一次 typeof 判断，其余按需加载。
+  "./runtime/bun-compat.ts",
+]);
 
 function staticImports() {
   return [...source.matchAll(/^\s*import\s+(?:[^"'`]*?from\s+)?["']([^"']+)["']/gm)].map(

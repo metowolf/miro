@@ -6,10 +6,15 @@
 // （Bun 运行时本身约 3ms），而 --help 根本不需要那条 3MB 级的图。分块后
 // `--help` 只加载入口 + 两个小 chunk；重路径因为 chunk 更小，字节码反序列化反而
 // 比单块内联略快。改动分组时要保住入口的这份「薄」，别把重模块挪回来。
+//
+// 唯一的例外是 Node 垫片：它必须排在其它 import 之前求值，Node 下先把 Bun 全局
+// 补上（src/runtime/bun-compat.ts），后面按需 import 的模块才敢直接用 Bun API；
+// Bun 运行时里这个模块只做一次 typeof 判断，不加载任何额外依赖。
+import "./runtime/bun-compat.ts";
 import process from "node:process";
 
 import { parseCliArgs } from "./cli/cli.ts";
-import { HELP } from "./config/config.ts";
+import { APP_VERSION, HELP } from "./config/config.ts";
 import { errorMessage } from "./utils.ts";
 
 if (process.argv[2] === "mcp") {
@@ -31,8 +36,14 @@ try {
 }
 
 // 短路路径：不碰 headless / tui，也不读 ~/.miro。
+// --help 优先于 --version：两个都给时输出更有信息量的那份。
 if (options.help) {
   process.stdout.write(HELP);
+  process.exit(0);
+}
+
+if (options.version) {
+  process.stdout.write(`${APP_VERSION}\n`);
   process.exit(0);
 }
 

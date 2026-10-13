@@ -62,3 +62,10 @@ jobs:
 
       - name: Smoke test (codemode builds)
         run: bun test ./test/codemode-build.smoke.ts
+
+      # Node 单体产物：构建一次并用 runner 自带的 node 跑，覆盖 Bun 垫片与 codemode Worker。
+      - name: Build Node bundle
+        run: bun run build:js
+
+      - name: Smoke test (Node bundle)
+        run: bun test ./test/node-bundle.smoke.ts

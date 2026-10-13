@@ -21,15 +21,26 @@
 
 ## 环境要求
 
-- [Bun](https://bun.sh/) **>= 1.4.3**
+- [Bun](https://bun.sh/) **>= 1.4.3**；装 npm 包时只需 Node **>= 22.7**
 - 为 Miro 自带 agent 准备一个兼容的 API 端点；仅在使用 `--acp` 时才需要 `PATH` 上的 ACP 提供方二进制（见 [ACP 提供方](#acp-提供方)）
 
 ## 安装与运行
+
+安装已发布的 npm 包；`miro` 命令跑在 Node **>= 22.7** 上，不需要 Bun：
+
+```bash
+npm install -g mirocode
+npx mirocode
+```
+
+从源码运行：
 
 ```bash
 bun install
 bun start
 ```
+
+`npm publish` 发布的是 Node 单体产物 `dist/cli.js` 加 codemode Worker 与 QuickJS WASM；`prepack` 会按当前源码重新构建它们。
 
 为当前平台编译独立二进制：
 
@@ -50,6 +61,7 @@ bun run scripts/build.ts --target bun-linux-x64 --outfile dist/miro-linux-amd64
 
 ```bash
 miro
+miro --version
 miro -p "Analyze this project"
 echo "Summarize this input" | miro -p
 miro -p --output-format json "Fix the tests"

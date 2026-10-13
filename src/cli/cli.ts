@@ -12,6 +12,7 @@ export interface CliOptions {
   permissionMode: "auto" | "manual" | null;
   interactionMode: "default" | "plan" | null;
   help: boolean;
+  version: boolean;
 }
 
 const OUTPUT_FORMATS = new Set<string>(["text", "json"]);
@@ -36,6 +37,7 @@ export function parseCliArgs(args: string[]): CliOptions {
     permissionMode: null,
     interactionMode: null,
     help: false,
+    version: false,
   };
   const promptParts = [];
   let optionsEnded = false;
@@ -52,6 +54,10 @@ export function parseCliArgs(args: string[]): CliOptions {
     }
     if (arg === "-h" || arg === "--help") {
       options.help = true;
+      continue;
+    }
+    if (arg === "-v" || arg === "--version") {
+      options.version = true;
       continue;
     }
     if (arg === "-p" || arg === "--print") {

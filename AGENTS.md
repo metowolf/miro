@@ -28,6 +28,7 @@ This file provides guidance to AI coding agents when working with code in this r
 | `src/input/` | 输入历史、投递、粘贴块、路径补全与输入光标 hook |
 | `src/render/` | Markdown、LaTeX、终端格宽与装饰字符 |
 | `src/terminal/` | shell 进程、终端能力、同步输出、光标形状与共享动画时钟/hook |
+| `src/runtime/` | Node 运行时的 Bun 全局垫片（只在 `dist/cli.js` 走 Node 时生效） |
 | `src/mcp/` | MCP 配置、CLI 管理、OAuth 与运行时连接 |
 | `src/acp/` | ACP client、协议配置适配与原始通信记录 |
 | `src/miro/` | 内置 agent client/loop、subagent、目标、计划与技能发现 |
@@ -52,16 +53,20 @@ bun start                       # 从源码启动 TUI
 bun start -- -p "explain this"  # CLI 参数放在 -- 之后
 bun run build                   # 编译本机 dist/miro 单文件二进制
 bun run scripts/build.ts --no-compile  # 打包 JS、chunks、codemode Worker 与 WASM
+bun run build:js                # 打包可在 Node 下独立运行的单体 dist/cli.js
+node dist/cli.js -p "explain"   # 用系统 Node 跑该产物（不需要 Bun）
 bun run tui                     # 运行已编译的二进制
 
 bun test                        # 默认测试发现
 bun test src/transcript/store.test.ts      # 单个测试文件
 bun test -t "test name"         # 按名称正则过滤
 
-# 三个 smoke 脚本不在默认发现内（文件名是 *.smoke.ts）：
+# smoke 脚本不在默认发现内（文件名是 *.smoke.ts）：
 bun test ./test/session-store.smoke.ts
 bun test ./test/store-session.smoke.ts
 bun test ./test/paste-block.render.smoke.ts
+bun test ./test/codemode-build.smoke.ts   # 先跑 bun run scripts/build.ts --no-compile 与 bun run build
+bun test ./test/node-bundle.smoke.ts      # 先跑 bun run build:js
 ```
 
 ## TypeScript 检查
@@ -74,6 +79,10 @@ bun test ./test/paste-block.render.smoke.ts
 
 Codemode 的 QuickJS 依赖必须保持按需加载：未开启时不加载声明生成器，未执行时不加载 VM/WASM。`scripts/build.ts` 将 `src/miro/tools/codemode-worker.ts` 作为第二个入口；运行时按 `import.meta.url` 定位输出入口 `codemode-worker.js` 和 file import 的 WASM，编译版从 `/$bunfs` 取资源，不能再引用源码入口或依赖 `node_modules` 相邻文件。JS bundle 的 main、chunks、Worker 与 WASM 必须放在同一目录。改构建定位后，依次跑 `bun run scripts/build.ts --no-compile`、`bun run build`、`bun test ./test/codemode-build.smoke.ts`；该 smoke 用本机假模型和隔离 HOME，从不同 cwd 执行源码、搬离项目的 JS 包和只含二进制的目录，不依赖真实模型或用户配置，也不在默认测试发现内。
 
+`bun run build:js` 走 `scripts/build-js.ts`，产出不依赖 Bun 的单体 `dist/cli.js`（`target: "node"`、`splitting: false`，入口不再分 chunk，代价是启动比二进制慢一截，换来的是一份能直接 `node dist/cli.js` 跑（Node >= 22.7，Ink 8 的下限）、也能整份搬走的产物）。Bun 专有 API 由 `src/runtime/bun-compat.ts` 补最小垫片，`src/main.ts` 最先 import 它：垫片只实现调用方真的会用的成员，因为依赖一旦看到 `typeof Bun !== "undefined"` 就会走 Bun 分支，缺成员等于运行时崩溃（sandbox-runtime 的 `whichSync` 要 `Bun.which`）；`render/` 里那些 `typeof Bun.xxx === "function"` 判断则让其余缺失能力自动回退。垫片只在没有 Bun 时安装，`bun start` 与 `dist/miro` 的行为不变。codemode 的 Worker 与 QuickJS WASM 仍是独立文件，必须与 `cli.js` 待在同一目录；`test/node-bundle.smoke.ts` 从只含这几个文件的隔离目录里跑 `--help` 与两轮带工具的 print（含 codemode），断言会话 id 仍是 UUIDv7。
+
+该产物同时是 npm 包本体（包名 `mirocode`）：`bin` 指向 `dist/cli.js`（`build-js.ts` 负责补 shebang 与可执行位，否则装完是个跑不起来的命令），`files` 只带 `cli.js`、`codemode-worker.js` 与 QuickJS WASM，`prepack` 在打包前重建它们。因为 bundle 只依赖 Node 内置模块，运行时依赖一律登记在 `devDependencies`，npm 安装不会再把 ink / react / sandbox-runtime 拉给用户；改依赖分类时记得同步 `bun.lock`。发布前用 `npm pack --dry-run` 核对 tarball 清单（当前 6 个文件，约 1.6MB）。
+
 ## 测试与 CI
 
 - 单元测试一般与源码同目录放在 `src/` 下；跨模块、TTY 与 smoke 测试放 `test/`。
@@ -81,13 +90,13 @@ Codemode 的 QuickJS 依赖必须保持按需加载：未开启时不加载声�
 - **不要写 tmux 端到端测试**（历史上的 `test/*.tmux.test.js` 与 `test/helpers/tmux-tui.js`、`test/fixtures/fake-acp.py`、`test/fixtures/fake-llm.py` 已整体移除）：不要用 tmux 或真实 TTY pane 驱动 TUI 再断言画面、控制序列或退出行为，也不要重新引入这类辅助层与 fixture。它依赖 tmux / python3 / Unix socket、慢且爱 flaky，还会把测试和渲染细节绑死。UI 是否画对没有自动化兜底，改完手动跑 `bun start` / `bun run tui` 目视确认。
 - 组件里的逻辑要覆盖时，先把它抽成不依赖 React/Ink 的纯函数再测：`src/components/picker/picker-*.ts`、`src/components/picker/picker-viewport.ts`、`src/input/use-input-cursor.ts` 的 `caretPosition`、`App.tsx` 的 `isClockRunning` / `refreshActiveGoal` 都是这么来的，组件文件本身只留接线。
 - `test/paste-block.render.smoke.ts` 是唯一直接渲染组件的脚本（手动运行，不在 `bun test` 发现内），必须显式设定终端尺寸（`process.stdout.columns/rows`）。
-- CI（`.github/workflows/ci.yml`）跑 `bun check` → `bun test` → 三条原有 smoke 各自独立一步 → `bun run build` → JS bundle → codemode 构建 smoke；`release.yml` 只在打 `v*` tag 时跑 `bun check`、`bun test` 并交叉编译四个平台。
+- CI（`.github/workflows/ci.yml`）跑 `bun check` → `bun test` → 三条原有 smoke 各自独立一步 → `bun run build` → JS bundle → codemode 构建 smoke → `bun run build:js` → Node 单体产物 smoke；`release.yml` 只在打 `v*` tag 时跑 `bun check`、`bun test` 并交叉编译四个平台。
 
 改 transcript 或组件时，先跑 `src/transcript/store.test.ts` 与最近的纯逻辑测试；画面本身不上自动化，也不要回头补渲染用例或 tmux 用例，目视确认即可。
 
 ## 执行流程
 
-- `src/main.ts` 刻意只静态依赖 `src/cli/cli.ts` / `src/config/config.ts` / `src/utils.ts`：`--help` 在这里直接短路退出，`src/session/session-store.ts`、`src/cli/headless.ts`、`src/cli/tui.tsx` 全部按需 import。它用 `src/cli/cli.ts` 解析参数，把不带 id 的 `-c` 解析成当前目录的最新会话，然后选择交互式 `src/cli/tui.tsx` 或 print 模式 `src/cli/headless.ts`；往这个文件加静态 import 会直接拖慢每一条启动路径（含 `--help`），重模块要挂在按需加载的一侧。
+- `src/main.ts` 刻意只静态依赖 `src/cli/cli.ts` / `src/config/config.ts` / `src/utils.ts` / `src/runtime/bun-compat.ts`：`--help` 在这里直接短路退出，`src/session/session-store.ts`、`src/cli/headless.ts`、`src/cli/tui.tsx` 全部按需 import。垫片是那个例外：它必须在任何按需 import 之前求值，且 Bun 路径下只做一次 `typeof Bun` 判断（wrap-ansi 也只在 Node 分支按需加载），`src/main.test.ts` 把这份静态依赖名单钉住了。它用 `src/cli/cli.ts` 解析参数，把不带 id 的 `-c` 解析成当前目录的最新会话，然后选择交互式 `src/cli/tui.tsx` 或 print 模式 `src/cli/headless.ts`；往这个文件加静态 import 会直接拖慢每一条启动路径（含 `--help`），重模块要挂在按需加载的一侧。
 - `tui.tsx` 要求 stdin/stdout 都是 TTY；支持 DEC 2026 的终端会用 `src/terminal/sync-stdout.ts` 包裹 stdout 做原子帧提交；退出后打印 `miro -c <id>`。
 - `headless.ts` 是脚本契约：stdout 只允许出现助手结果（或一行 JSON result，含 `permission_denials`）；诊断与权限提示一律走 stderr。保留它的依赖注入面，测试依赖它。
 - `src/components/App.tsx` 是唯一的编排层：client 生命周期、键盘输入、overlay、输入排队、斜杠命令分派，以及把 client 事件翻译成 `src/transcript/store.ts` 的 action。

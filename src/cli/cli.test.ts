@@ -16,6 +16,7 @@ test("parses the interactive session resume flags", () => {
     permissionMode: null,
     interactionMode: null,
     help: false,
+    version: false,
   });
   assert.equal(parseCliArgs(["--continue", "sess-456"]).continueSessionId, "sess-456");
 });
@@ -122,4 +123,14 @@ test("--mode selects the interaction mode independently from permissions", () =>
   assert.equal(parseCliArgs(["--mode", "plan", "--permission-mode", "manual"]).permissionMode, "manual");
   assert.throws(() => parseCliArgs(["--mode"]), /requires a value/);
   assert.throws(() => parseCliArgs(["--mode", "ask"]), /must be one of: default, plan/);
+});
+
+test("parses --version without touching the other options", () => {
+  assert.equal(parseCliArgs([]).version, false);
+  assert.equal(parseCliArgs(["--version"]).version, true);
+  assert.equal(parseCliArgs(["-v"]).version, true);
+  assert.equal(parseCliArgs(["-h"]).help, true);
+  // 与 --help 一致：只设标记，其余校验照旧。
+  assert.equal(parseCliArgs(["--version", "--acp", "pi"]).acp, "pi");
+  assert.throws(() => parseCliArgs(["--version", "hello"]), /requires --print/);
 });

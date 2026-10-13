@@ -21,15 +21,26 @@
 
 ## Requirements
 
-- [Bun](https://bun.sh/) **>= 1.4.3**
+- [Bun](https://bun.sh/) **>= 1.4.3**, or Node **>= 22.7** for the npm package
 - An API endpoint for Miro's built-in agent; an ACP binary on `PATH` is needed only for `--acp` (see [ACP providers](#acp-providers))
 
 ## Install and run
+
+Install the published package; the `miro` command runs on Node **>= 22.7** and needs no Bun:
+
+```bash
+npm install -g mirocode
+npx mirocode
+```
+
+From a checkout:
 
 ```bash
 bun install
 bun start
 ```
+
+`npm publish` ships the Node bundle `dist/cli.js` plus the codemode worker and QuickJS WASM; `prepack` rebuilds them from the current source.
 
 Build a standalone binary for the host platform:
 
@@ -50,6 +61,7 @@ bun run scripts/build.ts --target bun-linux-x64 --outfile dist/miro-linux-amd64
 
 ```bash
 miro
+miro --version
 miro -p "Analyze this project"
 echo "Summarize this input" | miro -p
 miro -p --output-format json "Fix the tests"

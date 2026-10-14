@@ -26,7 +26,7 @@ test("codemode 默认关闭，不抢跑、不参与外层并行，也不提前�
   assert.equal(createToolRunners({ cwd: "/work" }).codemode, undefined);
   assert.equal(isConcurrencySafeCall("codemode", { code: "return 1" }), false);
   assert.equal(isStreamingEagerCall("codemode", { code: "return 1" }), false);
-  for (const extra of [{ codemodeEnabled: false }, { disabledTools: ["codemode"] }]) {
+  for (const extra of [{ codemodeEnabled: false }]) {
     let schemas;
     await runAgentLoop({ messages: [], config: { ...config, ...extra }, handlers: {}, dependencies: {
       streamCompletion: async function* (request) { schemas = request.tools; yield { type: "text", text: "ok" }; },
@@ -56,10 +56,9 @@ test("codemode 内部调用有父子审计而模型历史只有外层一条配�
   assert.ok(nested.every((event) => event.toolCallId === "code-1/nested-1"));
 });
 
-test("codemode 遵守禁用工具、派生白名单与只读执行器，不能恢复 MCP", async () => {
+test("codemode 遵守派生白名单与只读执行器，不能恢复 MCP", async () => {
   for (const [extra, absent] of [
-    [{ disabledTools: ["read_file"] }, "read_file"],
-    [{ tools: ["codemode", "read_file"], disabledTools: ["read_file"] }, "read_file"],
+    [{ tools: ["codemode", "grep"] }, "read_file"],
     [{ readOnlyShell: true }, "mcp_call"],
   ] as const) {
     const { messages, events } = await execute(`return ${JSON.stringify(absent)} in tools`, extra, { mcpRuntime: { enabled: true } });

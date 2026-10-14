@@ -91,32 +91,6 @@ export async function saveThinkingDisplay(value) {
   writeSystemSettingsField("thinkingDisplay", value);
 }
 
-/**
- * miro 工具禁用表；未知名称也保留，方便升级后的工具继续沿用旧设置。
- *
- * `run_command` 是命令工具的曾用名（现在统一叫 `terminal`）：旧设置里存的名字归一
- * 成新名字，否则升级后用户禁用的那个工具会自己重新启用。
- */
-export function normalizeDisabledTools(value) {
-  if (!Array.isArray(value)) return [];
-  const seen = new Set<any>();
-  for (const entry of value) {
-    if (typeof entry !== "string") continue;
-    const name = entry.trim();
-    if (!name) continue;
-    seen.add(name === "run_command" ? "terminal" : name);
-  }
-  return [...seen];
-}
-
-/** 保存 miro 工具禁用表，同时保留 settings.json 的其它字段。 */
-export async function saveDisabledTools(value) {
-  writeSystemSettings({
-    ...readSystemSettings(),
-    disableTools: normalizeDisabledTools(value),
-  });
-}
-
 /** 内置工作流提示词语言，归一化后返回。 */
 export function readLanguage() {
   return readLanguageSetting();

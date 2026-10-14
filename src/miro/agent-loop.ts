@@ -459,11 +459,7 @@ export async function runAgentLoop({
   // 模型看得到但 runner 没装配会变成「Unknown tool」死循环。
   const sandboxEnabled = config.sandboxEnabled === true;
   const definitions = activeToolDefinitions(sandboxEnabled);
-  const disabledTools = new Set<any>(Array.isArray(config.disabledTools) ? config.disabledTools : []);
-  // 旧设置里存的 `run_command` 是同一个命令工具的曾用名，改名后不能失效。
-  if (disabledTools.has("run_command")) disabledTools.add("terminal");
   const allowedTools = (Array.isArray(config.tools) ? config.tools : definitions.map((definition) => definition.name))
-    .filter((name) => !disabledTools.has(name))
     .filter((name) => name !== "codemode" || config.codemodeEnabled === true);
   // 交互模式决定哪些工具这一轮不该出现在模型面前。逐条累积成一份屏蔽集合，
   // 免得「plan / default」与「interactive 与否」两个维度交叉成嵌套条件。

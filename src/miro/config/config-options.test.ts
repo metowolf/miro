@@ -38,41 +38,13 @@ test("buildConfigOptions output is recognized by ACP model.js", () => {
   assert.equal(options.find((option) => option.id === "protocol").currentValue, DEFAULT_MIRO_PROTOCOL);
 });
 
-test("Tools config options reflect top-level disableTools", () => {
-  const options = buildConfigOptions({
-    models: [{ id: "m1" }], model: "m1", effort: "medium", thinking: true,
-    disabledTools: ["read_file"],
-  });
-  const tools = options.find((option) => option.id === "tools");
-  const read = tools.tools.find((option) => option.id === "tool:read_file");
-  const write = tools.tools.find((option) => option.id === "tool:write_file");
-  assert.equal(tools.currentValue, "1 disabled");
-  assert.equal(read.category, "tools");
-  assert.equal(read.currentValue, "disabled");
-  assert.deepEqual(read.options.map((choice) => choice.value), ["enabled", "disabled"]);
-  assert.equal(write.currentValue, "enabled");
-  assert.deepEqual(readMiroConfig({ disableTools: ["run_command", "run_command"] }).disabledTools, ["terminal"]);
-});
-
-test("sandbox setting only changes the terminal parameters, never the tool name", () => {
+test("sandbox setting persists as an on/off config option", () => {
   const base = { models: [{ id: "m1" }], model: "m1", effort: "medium", thinking: true };
   const sandboxed = buildConfigOptions({ ...base, sandboxEnabled: true });
-  const sandboxNames = sandboxed.find((option) => option.id === "tools").tools.map((option) => option.id);
-  const hostNames = buildConfigOptions(base).find((option) => option.id === "tools").tools.map((option) => option.id);
-  assert.deepEqual(sandboxNames, hostNames);
-  assert.ok(sandboxNames.includes("tool:terminal"));
-  assert.ok(!sandboxNames.includes("tool:run_command"));
+  assert.ok(!sandboxed.some((option) => option.id === "tools"));
   const sandbox = sandboxed.find((option) => option.id === "sandbox");
   assert.equal(sandbox.currentValue, "on");
   assert.deepEqual(sandbox.options.map((option) => option.value), ["off", "on"]);
-  // 曾用名 `run_command` 的禁用选择要落到 terminal 上，两种模式都一样。
-  for (const sandboxEnabled of [false, true]) {
-    const legacyDisabled = buildConfigOptions({ ...base, sandboxEnabled, disabledTools: ["run_command"] });
-    assert.equal(
-      legacyDisabled.find((option) => option.id === "tools").tools.find((option) => option.id === "tool:terminal").currentValue,
-      "disabled",
-    );
-  }
   assert.equal(readMiroConfig({ miro: { sandbox: { enabled: true } } }).sandboxEnabled, true);
   assert.equal(readMiroConfig({ miro: { sandbox: { enabled: "true" } } }).sandboxEnabled, false);
 });

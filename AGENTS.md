@@ -59,7 +59,9 @@ bun run tui                     # 运行已编译的二进制
 
 bun test                        # 默认测试发现
 bun test src/transcript/store.test.ts      # 单个测试文件
-bun test -t "test name"         # 按名称正则过滤
+bun test -t "test name"         # 按名称正则过滤（位置参数也可当文件/路径过滤）
+
+MIRO_DEBUG_USAGE=1 bun start -- -p "explain this"   # 用量/请求组装诊断打到 stderr
 
 # smoke 脚本不在默认发现内（文件名是 *.smoke.ts）：
 bun test ./test/session-store.smoke.ts
@@ -75,6 +77,8 @@ bun test ./test/node-bundle.smoke.ts      # 先跑 bun run build:js
 
 `package.json` 里没有 test / lint / formatter / typecheck 脚本。必须用 `bun test`（它同时负责 JSX 与构建期环境），不要用 `bun run test` 或 `node --test`；用例本身按 `node:test` + `node:assert/strict` 写。
 
+构建期全局（`__MIRO_VERSION__`、`__MIRO_BUNDLED__` 与 `*.wasm` 的 file import 类型）声明在 `src/globals.d.ts`；源码运行时按 `typeof` 回退，所以引用它们的地方必须保留回退分支，否则 `bun start` 会拿不到值。
+
 `bun run build` 走 `scripts/build.ts`：注入 `__MIRO_VERSION__`、关闭 minify（Ink 依赖组件名）、用插件 stub 掉 Ink 的可选依赖 `react-devtools-core`、关闭 `autoloadBunfig`，并用 `bytecode: true` 把 bundle 预编译成字节码嵌进二进制，冷启动因此减半（代价是体积约 +8MB）。`splitting: true` 让 `src/main.ts` 的按需 import 真的切成独立 chunk：Bun 默认不分块，会把 tui / headless 整棵图内联进入口，入口于是必须先加载 3 MB 才轮到 `--help` 短路；分块后 `--help` 约 26ms → 6ms，重路径因为 chunk 更小反而略快（TUI 首帧约 86ms → 80ms，`-p` 约 28ms → 20ms），产物还小了约 1MB。`--no-compile` 同样分块，dist/main.js 必须和 dist/chunk-*.js 待在同一目录。交叉编译用 `bun run scripts/build.ts --target bun-linux-x64 --outfile dist/miro-linux-amd64`。
 
 Codemode 的 QuickJS 依赖必须保持按需加载：未开启时不加载声明生成器，未执行时不加载 VM/WASM。`scripts/build.ts` 将 `src/miro/tools/codemode-worker.ts` 作为第二个入口；运行时按 `import.meta.url` 定位输出入口 `codemode-worker.js` 和 file import 的 WASM，编译版从 `/$bunfs` 取资源，不能再引用源码入口或依赖 `node_modules` 相邻文件。JS bundle 的 main、chunks、Worker 与 WASM 必须放在同一目录。改构建定位后，依次跑 `bun run scripts/build.ts --no-compile`、`bun run build`、`bun test ./test/codemode-build.smoke.ts`；该 smoke 用本机假模型和隔离 HOME，从不同 cwd 执行源码、搬离项目的 JS 包和只含二进制的目录，不依赖真实模型或用户配置，也不在默认测试发现内。
@@ -88,6 +92,7 @@ Codemode 的 QuickJS 依赖必须保持按需加载：未开启时不加载声�
 - 单元测试一般与源码同目录放在 `src/` 下；跨模块、TTY 与 smoke 测试放 `test/`。
 - **不写 UI 单元测试**：不要为 Ink 组件写「渲染组件 → 断言画面/控制序列」的用例，也不要用 `renderToString` 或假 TTY 去锁定布局、间距、光标序列。这类测试与实现细节绑死，改一次排版就要重写一遍，收益抵不上维护成本。
 - **不要写 tmux 端到端测试**（历史上的 `test/*.tmux.test.js` 与 `test/helpers/tmux-tui.js`、`test/fixtures/fake-acp.py`、`test/fixtures/fake-llm.py` 已整体移除）：不要用 tmux 或真实 TTY pane 驱动 TUI 再断言画面、控制序列或退出行为，也不要重新引入这类辅助层与 fixture。它依赖 tmux / python3 / Unix socket、慢且爱 flaky，还会把测试和渲染细节绑死。UI 是否画对没有自动化兜底，改完手动跑 `bun start` / `bun run tui` 目视确认。
+- `test/` 里除 smoke 外还有默认发现就能跑的跨模块用例，例如 `test/mcp-transports.test.ts`（配 `test/fixtures/mcp-server.ts`）：它起真实 stdio 子进程与本机 `Bun.serve` HTTP 服务，不需要外部网络或真实模型。
 - 组件里的逻辑要覆盖时，先把它抽成不依赖 React/Ink 的纯函数再测：`src/components/picker/picker-*.ts`、`src/components/picker/picker-viewport.ts`、`src/input/use-input-cursor.ts` 的 `caretPosition`、`App.tsx` 的 `isClockRunning` / `refreshActiveGoal` 都是这么来的，组件文件本身只留接线。
 - `test/paste-block.render.smoke.ts` 是唯一直接渲染组件的脚本（手动运行，不在 `bun test` 发现内），必须显式设定终端尺寸（`process.stdout.columns/rows`）。
 - CI（`.github/workflows/ci.yml`）跑 `bun check` → `bun test` → 三条原有 smoke 各自独立一步 → `bun run build` → JS bundle → codemode 构建 smoke → `bun run build:js` → Node 单体产物 smoke；`release.yml` 只在打 `v*` tag 时跑 `bun check`、`bun test` 并交叉编译四个平台。
@@ -116,8 +121,7 @@ Codemode 的 QuickJS 依赖必须保持按需加载：未开启时不加载声�
 保持不变：
 
 - 协议适配与重试在 `src/miro/llm/llm-backend.ts`、`src/miro/llm/pi-ai-backend.ts`、`src/miro/llm/llm-provider.ts`，不要渗进 UI。
-- 工具的 schema、kind、执行器装配、参数解析、分批都在 `miro/tools/index.ts`；改一个工具要同时改定义与执行器。
-- 只有 `read` / `search` / `tasks` 可以并行（同批上限 `MAX_PARALLEL_TOOL_CALLS = 8`）；写、命令、subagent 保持调用顺序。改分批或「流里边收边执行」（`isStreamingEagerCall`）前，先想清楚审批弹窗与副作用。
+- 工具的 schema、kind、执行器装配、参数解析、分批都在 `miro/tools/index.ts`；改一个工具要同时改定义与执行器。分批只看该文件里的几张 kind 表：`CONCURRENCY_SAFE_KINDS`（`read` / `search` / `tasks` / `goal`，同批上限 `MAX_PARALLEL_TOOL_CALLS = 8`）可并行，其余按调用顺序执行；`EAGER_BLOCKED_KINDS`（`spawn` / `input` / `plan` / `codemode`）不参与「流里边收边执行」（`isStreamingEagerCall`），因为循环层无法预判它们会不会弹审批。改这些表之前先想清楚审批弹窗与副作用，并同步 `agent-loop.ts` 里 `SYSTEM_PROMPT` 的并行说明，否则模型会继续按旧策略发调用。
 - 每个 `tool_call` 必须有且只有一个对应结果；保留循环的回填行为，包括被中断的调用。
 - 上下文由两道闸门约束：`src/miro/context/compaction.ts`（纯函数决定阈值与切点，阈值按可用额度比例而非绝对 token）配合 `agent-loop.ts` 里的摘要替换；`src/miro/context/tool-result-budget.ts` 管单回合工具结果的总预算，超出的原文落盘到 `~/.miro/tool-results/`，进历史的是「预览 + 路径」桩。
 - subagent 走自己的 loop（`miro/subagent-runner.ts`），有独立历史与审批通道；`spawn_agent` 因可能弹窗而不参与流式执行。
@@ -138,6 +142,14 @@ miro 的权限模式只有 `auto` 与 `manual`（`src/miro/permissions/permissio
 
 Auto 权限判定不解析命令文本，不要重新加入 `rm`、`curl`、重定向、解释器或 heredoc 等词法规则；实际能力边界交给 OS 沙箱。Explore 的只读宿主执行器仍有自己的能力白名单，那不是 Auto 权限策略。新增 `yolo` 或别的模式属于设计变更，需要同步 CLI 校验、设置归一化、UI 选项与测试。
 
+## 目标、Plan Mode 与输入投递
+
+三者都是跨回合状态，只读一个文件很容易改错：
+
+- 目标（`src/miro/goal.ts`）是纯状态机与提示词文本：不碰 I/O、不认识 messages、不驱动循环。`pending` / `pausing` 是 UI 接管时只存在于过渡期的状态；续跑编排在 `agent-client.ts`（`driveGoal`，靠 `goalRunId` 版本号中断旧回合），预算与收敛提醒在 `agent-loop.ts`（复用 `hasNotice` / `dropNotice` 去重）。`GOAL_CONTINUATION_PROMPT` 的措辞本身就是行为约束，不要顺手改写。运行中新建目标先登记为 `pending`，等旧回合收尾后由 `activatePendingGoal` 激活，避免旧回合的 token / 时间混进新目标；`/compact` 必须先暂停目标。
+- Plan Mode（`src/miro/plan-mode.ts`）：交互模式（`default` / `plan`）与权限模式正交，`Shift+Tab` 只切前者。计划文件在 `~/.miro/sessions/<项目目录>/miro/plans/<sessionId>/<planId>.md`，模式与路径一起进 `planModeState` 并随会话持久化；提示词由 `planModePrompt()` 拼进 system prompt，`exit_plan_mode` 的评审走 client 的 `onPlanReviewRequest` → `PlanReviewDialog`。它是「设计而非实现」的软约束，不是只读工具白名单，别把它改成权限层。
+- 输入投递（`src/input/input-delivery.ts`）是纯逻辑：组件只做按键接线，client 只维护当前回合的收件箱。client 用 `steeringCapability()` 声明当前操作能否被引导（ACP、`promptIsolated()` 工作流、独立 `/compact` 一律 `available: false`），UI 不要自己判断；`steerInput()` 返回 receipt，`pendingInputs` 是已收下、等模型与工具收尾的引导，`queuedInputs` 是留到下一轮的 FIFO，`queuePaused` 表示有引导被退回后暂停派发（Ctrl+Q 里 `r` 恢复，可编辑、排序、删除）。恢复会话时 `recoverInputDelivery()` 对齐检查点、UI 快照与 blocks：新增任何一种输入状态，要同时改 App 的 `shouldRecordUiState` 与这里，并补 `src/input/input-delivery.test.ts` / `src/session/session-store.test.ts`。
+
 ## UI 与 transcript 规则
 
 - 动态活动区与已定稿的 `<Static>` 输出必须分开；可见顺序由 store 的 flush 顺序决定。
@@ -157,6 +169,8 @@ Auto 权限判定不解析命令文本，不要重新加入 `rm`、`curl`、重�
 model / effort 偏好按 provider 分别记忆（miro 在 settings 顶层，ACP 在各自的 `providers.<id>` 下）；改模型目录时注意它同时决定 API 连接方式与可用 effort 档位。
 
 启动上下文由 `src/config/agents-md.ts` 组装（`~/.miro/AGENTS.md` 与 `./AGENTS.md`），只在首个普通 prompt 注入、恢复会话时跳过，TUI 与 headless 两条路径都必须传。
+
+会话文件按 provider 分层：`~/.miro/sessions/<cwd 拍平后的目录>/<miro|acp>/<sessionId>.jsonl`，首行 meta、其下追加 block 事件；ACP 原始流量另存 `acp/raw/`，plan 文件与 `~/.miro/tool-results/` 落在同一棵树下。项目目录名复用 ACP recorder 的 `projectDirectoryName`，所以同一个 cwd 只有一个可读目录，provider 区分放在第二层。会话文件推迟到第一个真实对话块才创建（`isConversationBlock`）：provider 横幅、切模型、草稿 checkpoint 都不该让「打开就退出」变成 `/sessions` 里的最新会话。
 
 ## 变更纪律
 

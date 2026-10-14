@@ -3,14 +3,13 @@ import test from "node:test";
 import { buildConfigOptions, readMiroConfig } from "./config-options.ts";
 import { MiroAgentClient } from "../agent-client.ts";
 
-test("codemode 配置仅明确 true 时开启，并控制工具面板", () => {
+test("codemode 配置仅明确 true 时开启", () => {
   for (const enabled of [undefined, false, "true", 1, true]) {
     const expected = enabled === true;
     const config = readMiroConfig({ miro: { codemode: { enabled } } });
     assert.equal(config.codemodeEnabled, expected);
     const options = buildConfigOptions({ models: [{ id: "m1" }], model: "m1", codemodeEnabled: expected });
     assert.equal(options.find((entry) => entry.id === "codemode").currentValue, expected ? "on" : "off");
-    assert.equal(options.find((entry) => entry.id === "tools").tools.some((entry) => entry.id === "tool:codemode"), expected);
   }
 });
 

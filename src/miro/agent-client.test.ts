@@ -281,22 +281,20 @@ test("a qualified oauth model preference is selected after merging catalogs", ()
   assert.equal(client.modelConfig.currentValue, "openai-codex/gpt-5.6-sol");
 });
 
-test("/config sandbox persists the setting and keeps the terminal tool in both modes", async () => {
+test("/config sandbox persists the setting", async () => {
   const writes = [];
   const client = makeClient();
   client.dependencies.writeSystemSettings = async (settings) => writes.push(settings);
-  const toolIds = () => client.configOptions.find((option) => option.id === "tools").tools.map((option) => option.id);
 
   await client.setConfigOption("sandbox", "on");
   assert.equal(client.config.sandboxEnabled, true);
   assert.equal(writes[0].miro.sandbox.enabled, true);
-  assert.ok(toolIds().includes("tool:terminal"));
 
   await client.setConfigOption("sandbox", "off");
   assert.equal(client.config.sandboxEnabled, false);
   assert.equal(writes[1].miro.sandbox.enabled, false);
-  assert.ok(toolIds().includes("tool:terminal"));
-  assert.ok(!toolIds().includes("tool:run_command"));
+  assert.ok(!client.configOptions.some((option) => option.id === "tools"));
+  await assert.rejects(client.setConfigOption("tool:terminal", "disabled"), /not supported/);
 });
 
 test("manual compact preserves its summary across the next prompt, mode changes and resume", async () => {

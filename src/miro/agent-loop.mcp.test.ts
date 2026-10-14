@@ -44,11 +44,10 @@ test("MCP 按需发现只提供两个工具，模型请求前不自动建连", a
   } finally { await runtime.close(); }
 });
 
-test("MCP schemas are hidden without configured runtime and obey disabled tools and read-only execution", async () => {
+test("MCP schemas are hidden without configured runtime and obey read-only execution", async () => {
   for (const [mcpRuntime, extra, expected] of [
     [null, {}, []],
     [{ enabled: true }, {}, ["mcp_list_tools", "mcp_call"]],
-    [{ enabled: true }, { disabledTools: ["mcp_call"] }, ["mcp_list_tools"]],
     [{ enabled: true }, { readOnlyShell: true }, []],
   ]) {
     let names;

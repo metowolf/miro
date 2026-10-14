@@ -28,9 +28,13 @@ const build = (entrypoint: string, name: string) => Bun.build({
   target: "node",
   format: "esm",
   splitting: false,
+  // 只压空白与语法，不改标识符：Ink 依赖组件名，重命名会破坏它。
+  minify: { whitespace: true, syntax: true, identifiers: false },
   define: {
     __MIRO_VERSION__: JSON.stringify(pkg.version),
     __MIRO_BUNDLED__: "true",
+    // 让 react / react-reconciler 走 production 构建，dev 版体积近一倍且带运行时检查。
+    "process.env.NODE_ENV": JSON.stringify("production"),
   },
 });
 
@@ -40,7 +44,9 @@ const results = [
 ];
 
 if (results.some((result) => !result.success)) {
-  for (const result of results) for (const log of result.logs) console.error(log.message ?? log);
+  for (const result of results) {
+    for (const log of result.logs) console.error(log.message ?? log);
+  }
   process.exit(1);
 }
 

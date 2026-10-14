@@ -1,9 +1,9 @@
 /**
  * 底部面板的状态行显隐，以及 Ctrl+C 取消 overlay 的两个形状。
  *
- * picker 与各面板用 resolve(escapeValue) 收尾，InputPrompt 那一类（oauth / export /
+ * picker 与各面板用 resolve(escapeValue) 收尾，InputPrompt 那一类（export /
  * review / simplify / commit 的文本输入）只有 onSubmit / onCancel。早前统一调
- * resolve，后者会抛 TypeError——登录输入框上按 Ctrl+C 直接炸，而不是取消。
+ * resolve，后者会抛 TypeError——文本输入框上按 Ctrl+C 直接炸，而不是取消。
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -24,7 +24,7 @@ test("picker 型 overlay 走 resolve(escapeValue)", () => {
 
 test("InputPrompt 型 overlay 走 onCancel", () => {
   let cancelled = 0;
-  cancelOverlay({ kind: "oauth-input", onSubmit: () => {}, onCancel: () => { cancelled += 1; } });
+  cancelOverlay({ kind: "export-input", onSubmit: () => {}, onCancel: () => { cancelled += 1; } });
   assert.equal(cancelled, 1);
 });
 

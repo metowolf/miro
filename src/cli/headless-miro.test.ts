@@ -55,9 +55,8 @@ function dependencies({ stdout, stderr, records, stream, settings = {}, createPl
           cwd: process.cwd(),
           settings: { miro: { models: ["m1"], model: "m1" }, ...settings },
           dependencies: {
-            // 不注入就会去读真实的 ~/.miro/models.json / auth.json，本机目录和登录态会盖掉用例的模型表。
+            // 不注入就会去读真实的 ~/.miro/models.json，本机目录会盖掉用例的模型表。
             modelsFile: null,
-            oauthModels: { getModels: () => [] },
             startBash: () => ({
               result: Promise.resolve({ stdout: "", stderr: "", outcome: { type: "exited", code: 0 } }),
               interrupt: () => true,

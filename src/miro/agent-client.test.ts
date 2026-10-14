@@ -7,9 +7,6 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import test from "node:test";
 
 import { MiroAgentClient } from "./agent-client.ts";
@@ -31,9 +28,8 @@ function makeClient({ rounds = [], contextText = null, seen = [] }: any = {}) {
     contextText,
     settings: { miro: { models: ["m1"], model: "m1" } },
     dependencies: {
-      // 不注入就会读真实的 ~/.miro/models.json 与 auth.json，本机目录/登录态会盖掉用例的模型表。
+      // 不注入就会读真实的 ~/.miro/models.json，本机目录会盖掉用例的模型表。
       modelsFile: null,
-      oauthModels: { getModels: () => [] },
       loadSkills: () => ({ skills: [], diagnostics: [] }),
       loadSessionBlocks: () => null,
       streamCompletion: scriptedStream(rounds, seen),
@@ -237,7 +233,6 @@ test("a miro client starts on the saved top-level model / effort preference", ()
     settings: { model: "m2", effort: "high", miro: { models: ["m1", "m2"], model: "m1" } },
     dependencies: {
       modelsFile: null,
-      oauthModels: { getModels: () => [] },
       loadSkills: () => ({ skills: [], diagnostics: [] }),
     },
   });
@@ -247,38 +242,6 @@ test("a miro client starts on the saved top-level model / effort preference", ()
   assert.equal(client.config.effort, "high");
   assert.equal(client.modelConfig.currentValue, "m2");
   assert.equal(client.effortConfig.currentValue, "high");
-});
-
-test("a qualified oauth model preference is selected after merging catalogs", () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "miro-oauth-pref-"));
-  const authFile = path.join(dir, "auth.json");
-  writeFileSync(authFile, `${JSON.stringify({
-    credentials: { "openai-codex": { type: "oauth", access: "t", refresh: "r", expires: 1 } },
-  })}\n`);
-
-  const client = new MiroAgentClient({
-    cwd: "/tmp/agent-client-test",
-    settings: { model: "openai-codex/gpt-5.6-sol", miro: { models: ["m1"], model: "m1" } },
-    dependencies: {
-      modelsFile: null,
-      authFile,
-      oauthModels: {
-        getModels: () => [{
-          id: "gpt-5.6-sol",
-          name: "GPT-5.6 Sol",
-          provider: "openai-codex",
-          api: "openai-codex-responses",
-          baseUrl: "https://chatgpt.com/backend-api",
-          reasoning: true,
-        }],
-      },
-      loadSkills: () => ({ skills: [], diagnostics: [] }),
-    },
-  });
-
-  assert.equal(client.config.model, "openai-codex/gpt-5.6-sol");
-  assert.equal(client.config.apiModel, "gpt-5.6-sol");
-  assert.equal(client.modelConfig.currentValue, "openai-codex/gpt-5.6-sol");
 });
 
 test("/config sandbox persists the setting", async () => {

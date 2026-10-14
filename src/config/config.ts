@@ -76,7 +76,6 @@ Examples:
 
 Commands:
   miro mcp ...        Add, list, trust, sign in to, or remove MCP servers
-  /login              Sign in to a subscription provider
   /mcp [list|trust]    Manage built-in agent MCP servers
   /init [extra]       Analyze the codebase and create or improve AGENTS.md
   /model [model]      Select or switch model; match by display name or value

@@ -439,26 +439,6 @@ function thinkingBlockAt(event) {
 }
 
 async function* streamPiAi(protocol, requestOptions) {
-  // 订阅 provider 必须通过它原始的 Models 实例发请求：这里会取出、必要时刷新
-  // OAuth token，并保留 provider 专属 headers/baseUrl。自定义 models.json 仍走下方
-  // 的临时 API-key provider，兼容原有行为。
-  const oauthModel = requestOptions.oauthProvider && requestOptions.oauthModels
-    ? requestOptions.oauthModels.getModel(requestOptions.oauthProvider, requestOptions.model)
-    : null;
-  if (oauthModel) {
-    const options = streamOptionsFor(protocol, requestOptions);
-    // Models.applyAuth 规定显式 apiKey 优先；不能把旧兼容路径的 "unused"
-    // 占位符传给同时支持 API key 的 OAuth provider，否则会绕开 OAuth refresh。
-    delete options.apiKey;
-    if (usageDebugEnabled()) options.fetch = withUsageLogging(options.fetch);
-    const stream = requestOptions.oauthModels.stream(
-      oauthModel,
-      toPiContext(requestOptions.messages, requestOptions.tools, oauthModel),
-      options,
-    );
-    for await (const event of stream) yield* translatePiEvent(event);
-    return;
-  }
   const model = modelFor(protocol, requestOptions);
   const provider = createProvider({
     id: model.provider,

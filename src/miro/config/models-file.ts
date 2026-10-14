@@ -204,21 +204,6 @@ export function catalogKey(provider, id) {
   return typeof provider === "string" && provider.length > 0 ? `${provider}/${id}` : id;
 }
 
-/** 按 key 去重拼接目录；先出现的条目保留，后出现的同 key 丢掉。 */
-export function mergeModelCatalogs(...catalogs) {
-  const merged = [];
-  const seen = new Set<any>();
-  for (const catalog of catalogs) {
-    if (!Array.isArray(catalog)) continue;
-    for (const entry of catalog) {
-      if (!entry?.key || seen.has(entry.key)) continue;
-      seen.add(entry.key);
-      merged.push(entry);
-    }
-  }
-  return merged;
-}
-
 export function loadMiroModelCatalog(file = MODELS_FILE, { env = process.env }: any = {}) {
   if (!file) return [];
   return catalogFromModelsFile(readJsonObject(file), { env });

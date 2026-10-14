@@ -104,7 +104,6 @@ bun start -- -p "Analyze this project"
 | 命令 | 说明 |
 |------|------|
 | `/init [extra]` | 分析代码库并创建或改进 `AGENTS.md` |
-| `/login` | 登录订阅提供方（ChatGPT/Codex、Claude、Copilot、OpenRouter、Kimi 或 xAI） |
 | `/model [model]` | 选择或切换模型 |
 | `/effort [level]` | 设置当前模型的努力程度 |
 | `/config [id] [val]` | 查看或修改 ACP 会话配置项 |
@@ -311,7 +310,7 @@ miro 会在可见聊天记录之外保存模型上下文检查点，包含压缩
 
 ## 配置
 
-模型、努力程度、提示词语言、状态栏和自定义 ACP 提供方偏好保存在 `~/.miro/settings.json`；其中遗留的顶层 `provider` 会被忽略。miro 的上游与模型列表保存在 `~/.miro/models.json`；`/login` 创建的订阅 OAuth 凭据独立保存在 `~/.miro/auth.json`。`/login` 仅在 miro TUI 中可用，会启动提供方的浏览器或设备码流程。OAuth 订阅与 API key 是独立认证路径；请妥善保管 `auth.json`，订阅凭据只应用于你自己的本地使用。`/config` 既可修改 ACP 以 `configOptions` 声明的实时选项，也可修改 miro 自己的 `language` 选项。
+模型、努力程度、提示词语言、状态栏和自定义 ACP 提供方偏好保存在 `~/.miro/settings.json`；其中遗留的顶层 `provider` 会被忽略。miro 的上游与模型列表只从 `~/.miro/models.json` 导入。`/config` 既可修改 ACP 以 `configOptions` 声明的实时选项，也可修改 miro 自己的 `language` 选项。
 
 ### 权限模式
 

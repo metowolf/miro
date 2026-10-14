@@ -9,8 +9,6 @@ import { AcpClient } from "../acp/acp-client.ts";
 import { MiroAgentClient } from "../miro/agent-client.ts";
 import { projectMcpTrust, trustProjectMcp, updateMcpServerSetting } from "../mcp/mcp-config.ts";
 import { logoutMcp } from "../mcp/mcp-oauth.ts";
-import { catalogKey } from "../miro/config/models-file.ts";
-import { OAUTH_PROVIDERS } from "../miro/auth/oauth-providers.ts";
 import { formatElapsed } from "../miro/goal.ts";
 import { approvedPlanPrompt } from "../miro/plan-mode.ts";
 import {
@@ -45,7 +43,6 @@ import {
   APP_VERSION,
 } from "../config/config.ts";
 import { buildDefaultFilename, ensureTxtExtension, osc52Copy, renderTranscript } from "../transcript/export.ts";
-import { openUrl } from "../terminal/open-browser.ts";
 import { buildInitPrompt } from "../commands/init.ts";
 import {
   readEffortPreference,
@@ -107,7 +104,6 @@ import {
   userFacingHint as commitHint,
 } from "../commands/commit.ts";
 import { useStore, setRecorder } from "../transcript/store.ts";
-import { createLoginInteraction } from "./dialogs/login-interaction.ts";
 import { errorMessage } from "../utils.ts";
 import { BashCard } from "./transcript/BashCard.tsx";
 import { ActivitySlot } from "./transcript/ActivitySlot.tsx";
@@ -251,7 +247,7 @@ export function ctrlCIntent({ hasOverlay, hasDraft }: any) {
 
 /**
  * 取消当前 overlay。picker 与各面板都靠 resolve(escapeValue) 收尾，而 InputPrompt
- * 那一类（oauth / export / review / simplify / commit 的文本输入）只有
+ * 那一类（export / review / simplify / commit 的文本输入）只有
  * onSubmit / onCancel，直接调 resolve 会抛 TypeError，Esc 与 Ctrl+C 必须走同一个
  * 出口——两边表现出不同行为比不能取消更糟。
  */
@@ -1166,62 +1162,6 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
         void applyModel(value, { chainEffort: true });
       },
     });
-  };
-
-  /** 将 pi-ai 的认证交互映射到现有的 picker / 输入框。 */
-  const startLogin = (providerId) => {
-    const store = useStore.getState();
-    const client = clientRef.current;
-    if (!isMiroProvider(providerRef.current) || typeof client?.login !== "function") {
-      store.push("system", "/login is available only with Miro's built-in agent.");
-      return;
-    }
-    if (store.busy || store.overlay || store.switching) {
-      store.push("system", "Please wait for the current activity to finish before logging in.");
-      return;
-    }
-    // 用户取消与 pi-ai 收尾的区分见 login-interaction.ts：它只负责把请求翻成
-    // overlay，并单独报出「用户改主意」；真实登录失败仍按原始错误上报。
-    const signIn = createLoginInteraction({
-      setOverlay: (overlay) => useStore.getState().setOverlay(overlay),
-      currentOverlay: () => useStore.getState().overlay,
-    });
-    const interaction = {
-      signal: signIn.signal,
-      prompt: signIn.prompt,
-      notify: (event) => {
-        if (event.type === "auth_url") {
-          // 打不开浏览器（无桌面环境、缺 xdg-open）只是提示问题：URL 照样打出来，
-          // 用户手动打开或粘贴授权码都能走完登录，不能因为起不了进程就中断。
-          const opened = openUrl(event.url);
-          const hint = event.instructions ?? "Open this URL to sign in:";
-          store.push("system", `${opened ? "" : "Could not open a browser automatically.\n"}${hint}\n${event.url}`);
-        } else if (event.type === "device_code") {
-          store.push("system", `Open ${event.verificationUri} and enter code: ${event.userCode}`);
-        } else if (event.type === "info" || event.type === "progress") store.push("system", event.message);
-      },
-    };
-    store.setSwitching("Signing in…");
-    void client.login(providerId, interaction).then(async () => {
-      store.setSwitching(null);
-      store.push("system", `Signed in to ${OAUTH_PROVIDERS.find((item) => item.id === providerId)?.name ?? providerId}.`);
-      if (providerId === "openai-codex") {
-        await applyModel(catalogKey("openai-codex", "gpt-5.6-sol"), { chainEffort: false });
-        return;
-      }
-      const choices = await client.oauthProviderModels(providerId);
-      useStore.getState().setOverlay({ kind: "oauth", title: "Select model", items: choices.map((item) => ({ value: item.value, label: item.name })), escapeValue: null, resolve: (value) => { useStore.getState().setOverlay(null); if (value) void applyModel(value, { chainEffort: true }); } });
-    }).catch((error) => {
-      store.setSwitching(null);
-      if (signIn.cancelled()) store.push("system", "Login cancelled.");
-      else store.push("error", `Login failed: ${errorMessage(error)}`);
-    });
-  };
-
-  const openLoginPicker = () => {
-    const store = useStore.getState();
-    if (store.busy || store.overlay || store.switching) return;
-    store.setOverlay({ kind: "oauth", title: "Sign in", items: OAUTH_PROVIDERS.map((item) => ({ value: item.id, label: item.name, right: item.description })), escapeValue: null, resolve: (value) => { useStore.getState().setOverlay(null); if (value) startLogin(value); } });
   };
 
   /** /model 按 value（provider/id）、裸 id、name 匹配。 */
@@ -2898,7 +2838,6 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
           },
         });
       },
-      login: (args) => args ? store.push("system", "Usage: /login") : openLoginPicker(),
       init: (args) =>
         void sendPrompt(
           [{ type: "text", text: buildInitPrompt(args, languageRef.current) }],
@@ -3075,7 +3014,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
             questions={overlay.questions}
             onResolve={(value) => overlay.resolve(value)}
           />
-        ) : overlay?.kind === "export-input" || overlay?.kind === "oauth-input" ||
+        ) : overlay?.kind === "export-input" ||
           overlay?.kind === "review-input" ||
           overlay?.kind === "simplify-input" ||
           overlay?.kind === "commit-input" ? (

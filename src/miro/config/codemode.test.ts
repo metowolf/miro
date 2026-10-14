@@ -17,7 +17,7 @@ test("/config codemode 持久化且当前、隔离回合与配置视图立即一
   const writes = [];
   const schemas = [];
   const client = new MiroAgentClient({ settings: { miro: { models: ["m1"], model: "m1", codemode: { note: "keep" } }, skills: false }, dependencies: {
-    modelsFile: null, oauthModels: { getModels: () => [] }, mcpRuntime: { enabled: false, close: async () => {} },
+    modelsFile: null, mcpRuntime: { enabled: false, close: async () => {} },
     writeSystemSettings: async (settings) => writes.push(settings),
     streamCompletion: async function* (request) { schemas.push(request.tools.map((entry) => entry.function.name)); yield { type: "text", text: "ok" }; },
   } });

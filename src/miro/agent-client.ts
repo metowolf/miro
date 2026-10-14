@@ -35,10 +35,8 @@ import {
 } from "./config/config-options.ts";
 import {
   MODELS_FILE,
-  catalogKey,
   findCatalogModel,
   loadMiroModelCatalog,
-  mergeModelCatalogs,
   resolveModelSecrets,
 } from "./config/models-file.ts";
 import {
@@ -53,8 +51,6 @@ import {
   normalizePlanModeState,
   planModePrompt,
 } from "./plan-mode.ts";
-import { MiroCredentialStore, storedCredentialProviderIds } from "./auth/credential-store.ts";
-import { createOAuthModels, oauthCatalogForCredentialIds } from "./auth/oauth-providers.ts";
 
 /**
  * Miro 内置 agent 的会话事件源。
@@ -77,8 +73,6 @@ export class MiroAgentClient extends EventEmitter {
   declare settings: any;
   declare mcpRuntime: any;
   declare modelsFile: any;
-  declare credentialStore: any;
-  declare oauthModels: any;
   declare config: any;
   declare skills: any;
   declare skillDiagnostics: any;
@@ -143,8 +137,6 @@ export class MiroAgentClient extends EventEmitter {
       ...loadMcpServers(this.settings, this.cwd), cwd: this.cwd,
     });
     this.modelsFile = dependencies.modelsFile === undefined ? MODELS_FILE : dependencies.modelsFile;
-    this.credentialStore = dependencies.credentialStore ?? new MiroCredentialStore(dependencies.authFile);
-    this.oauthModels = dependencies.oauthModels ?? createOAuthModels(this.credentialStore);
     this.config = this.readConfig();
     // 命令行权限模式优先于配置：一次性运行的意图比持久化的偏好更具体。
     if (permissionMode != null) {
@@ -209,15 +201,8 @@ export class MiroAgentClient extends EventEmitter {
   }
 
   readConfig({ selectedModel = null }: any = {}) {
-    // 先合并再选模型：settings 顶层的 `provider/id` 偏好必须能对上 OAuth 目录。
-    // 订阅模型放前面，旧的裸 id 偏好也会优先对上已登录的提供方。
-    const catalog = mergeModelCatalogs(
-      oauthCatalogForCredentialIds(
-        this.oauthModels,
-        storedCredentialProviderIds(this.credentialStore.file),
-      ),
-      loadMiroModelCatalog(this.modelsFile),
-    );
+    // 模型目录只来自 ~/.miro/models.json。
+    const catalog = loadMiroModelCatalog(this.modelsFile);
     return readMiroConfig(this.settings, {
       catalog,
       selectedModel: selectedModel ?? this.config?.model,
@@ -730,12 +715,9 @@ export class MiroAgentClient extends EventEmitter {
    * 不同的模型、权限或轮次配置，是最难发现的那类漂移。
    */
   loopConfig(overrides: any = {}) {
-    const selected = findCatalogModel(this.config.models, this.config.model);
     return {
       cwd: this.cwd,
       ...this.requestConnection(),
-      oauthProvider: selected?.oauth ? selected.provider : null,
-      oauthModels: this.oauthModels,
       model: this.config.apiModel ?? this.config.model,
       // pi-ai 根据 model.thinkingLevelMap 把标准档位映射成上游值；
       // 这里必须保留 canonical level，否则 thinking budget 无法按档位计算。
@@ -1014,21 +996,6 @@ export class MiroAgentClient extends EventEmitter {
     };
   }
 
-  /** 供 TUI `/login` 调用；交互实现属于 App，认证生命周期属于 client。 */
-  async login(providerId, interaction) {
-    const credential = await this.oauthModels.login(providerId, "oauth", interaction);
-    this.reloadSessionOptions();
-    return credential;
-  }
-
-  async oauthProviderModels(providerId) {
-    return (await this.oauthModels.getAvailable(providerId)).map((model) => ({
-      value: catalogKey(model.provider, model.id),
-      name: model.name ?? model.id,
-      provider: model.provider,
-    }));
-  }
-
   /** 本地生效：改状态后直接广播 config，没有远端回推需要等。 */
   async setConfigOption(configId, value) {
     if (configId === "protocol") {
@@ -1045,8 +1012,7 @@ export class MiroAgentClient extends EventEmitter {
           : process.env.OPENAI_API_KEY ?? "";
       }
     } else if (configId === "model") {
-      // 目录与已登录 OAuth provider 都是模型来源；不能只重读 models.json，
-      // 否则用户刚登录后切模型会把订阅模型从当前会话静默抹掉。
+      // 切模型前重读 models.json，编辑后的目录无需重启即可生效。
       this.config.models = this.readConfig({ selectedModel: this.config.model }).models;
       const entry = findCatalogModel(this.config.models, value);
       if (!entry) throw new Error(`model "${value}" is not available`);

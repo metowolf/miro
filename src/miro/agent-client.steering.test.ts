@@ -19,7 +19,6 @@ function harness({ finish = "stop", failure = false, maxToolRounds = 5, isolated
     settings: { miro: { models: ["m1"], model: "m1" } },
     dependencies: {
       modelsFile: null,
-      oauthModels: { getModels: () => [] },
       loadSkills: () => ({ skills: [], diagnostics: [] }),
       loadSessionBlocks: () => null,
       backend: {

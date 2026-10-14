@@ -104,7 +104,6 @@ Type these in the interactive composer:
 | Command | Description |
 |---------|-------------|
 | `/init [extra]` | Analyze the codebase and create or improve `AGENTS.md` |
-| `/login` | Sign in to a subscription provider (ChatGPT/Codex, Claude, Copilot, OpenRouter, Kimi, or xAI) |
 | `/model [model]` | Select or switch model |
 | `/effort [level]` | Set the current model's effort level |
 | `/config [id] [val]` | View or change ACP session config options |
@@ -311,7 +310,7 @@ Composer history is independent of the transcript, at `~/.miro/history.jsonl`.
 
 ## Configuration
 
-Model, effort, prompt-language, status-line, and custom ACP-provider preferences live in `~/.miro/settings.json`. Its legacy top-level `provider` value is ignored. Miro LLM endpoints and models live in `~/.miro/models.json`; subscription OAuth credentials created by `/login` live separately in `~/.miro/auth.json`. `/login` is available in the Miro TUI and opens the provider's browser or device-code flow. OAuth subscriptions and API keys are separate authentication paths; keep `auth.json` private and use subscription credentials only for your own local work. `/config` changes both the live ACP options advertised as `configOptions` and miro's own `language` option.
+Model, effort, prompt-language, status-line, and custom ACP-provider preferences live in `~/.miro/settings.json`. Its legacy top-level `provider` value is ignored. Miro LLM endpoints and models are imported only from `~/.miro/models.json`. `/config` changes both the live ACP options advertised as `configOptions` and miro's own `language` option.
 
 ### Permission mode
 

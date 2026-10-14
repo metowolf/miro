@@ -1,7 +1,6 @@
 /** 斜杠命令注册表与候选生成。 */
 
 export const SLASH_COMMANDS = [
-  { name: "login", aliases: [], description: "Sign in to a subscription provider (ChatGPT, Claude, Copilot, and more)" },
   { name: "init", aliases: [], description: "Analyze codebase and generate / improve AGENTS.md (/init [extra instructions])" },
   { name: "model", aliases: [], description: "Select / switch model (/model [model] to set directly)" },
   { name: "effort", aliases: [], description: "Set effort level for model usage (/effort [level] to set directly)" },

@@ -322,8 +322,6 @@ async function runCompaction({
         baseUrl: config.baseUrl,
         apiKey: config.apiKey,
         model: config.model,
-        oauthProvider: config.oauthProvider ?? null,
-        oauthModels: config.oauthModels ?? null,
         // 摘要必须不带工具：给了 schema，模型会去调工具而不是写摘要。
         messages: buildSummaryRequest({ toSummarize: chunk, previousSummary: split.previousSummary, instructions }),
         tools: [],
@@ -643,8 +641,6 @@ export async function runAgentLoop({
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
       model: config.model,
-      oauthProvider: config.oauthProvider ?? null,
-      oauthModels: config.oauthModels ?? null,
       messages,
       tools: schemas,
       effort: config.thinking ? config.effort : null,

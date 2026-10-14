@@ -14,7 +14,7 @@ function harness(script) {
   const client = new MiroAgentClient({
     cwd: "/work",
     settings: {},
-    dependencies: { modelsFile: null, oauthModels: { getModels: () => [] }, loadSkills: () => ({ skills: [], diagnostics: [] }) },
+    dependencies: { modelsFile: null, loadSkills: () => ({ skills: [], diagnostics: [] }) },
   });
 
   const inputs = [];

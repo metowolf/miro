@@ -34,7 +34,6 @@ This file provides guidance to AI coding agents when working with code in this r
 | `src/miro/` | 内置 agent client/loop、subagent、目标、计划与技能发现 |
 | `src/miro/llm/` | LLM 协议适配、请求重试与发出消息的归一化 |
 | `src/miro/config/` | 内置 agent 配置选项与模型目录 |
-| `src/miro/auth/` | 模型凭据存储与订阅 provider OAuth |
 | `src/miro/context/` | 历史压缩与工具结果预算 |
 | `src/miro/permissions/` | 权限模式、风险等级与自动审批 |
 | `src/miro/diagnostics/` | 用量与请求组装诊断 |

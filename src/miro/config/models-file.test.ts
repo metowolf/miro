@@ -5,7 +5,6 @@ import {
   catalogFromModelsFile,
   catalogKey,
   findCatalogModel,
-  mergeModelCatalogs,
   resolveConfigValue,
   resolveHeaders,
   resolveModelSecrets,
@@ -78,17 +77,7 @@ test("ids that contain slashes stay inside provider/id", () => {
   assert.equal(findCatalogModel(catalog, "deepseek/deepseek-flash").provider, "vendor");
 });
 
-test("mergeModelCatalogs keeps the first entry for a duplicated key", () => {
-  const file = [{ key: "openai-codex/gpt-5.6-sol", id: "gpt-5.6-sol", provider: "openai-codex", name: "from-file" }];
-  const oauth = [
-    { key: "openai-codex/gpt-5.6-sol", id: "gpt-5.6-sol", provider: "openai-codex", name: "from-oauth" },
-    { key: "openai-codex/gpt-5.6-luna", id: "gpt-5.6-luna", provider: "openai-codex", name: "Luna" },
-  ];
-  const merged = mergeModelCatalogs(file, oauth);
-  assert.deepEqual(merged.map((entry) => [entry.key, entry.name]), [
-    ["openai-codex/gpt-5.6-sol", "from-file"],
-    ["openai-codex/gpt-5.6-luna", "Luna"],
-  ]);
+test("catalogKey joins provider and id", () => {
   assert.equal(catalogKey("metowolf", "gpt-5.6-sol"), "metowolf/gpt-5.6-sol");
   assert.equal(catalogKey("", "bare"), "bare");
 });

@@ -13,7 +13,7 @@ function fixture(t) {
   const write = (value) => writeFileSync(file, JSON.stringify(value));
   write(settings);
   const client = new MiroAgentClient({ cwd, settings, dependencies: {
-    modelsFile: null, oauthModels: { getModels: () => [] },
+    modelsFile: null,
     readSystemSettings: () => readJsonObject(file),
   } });
   t.after(async () => {

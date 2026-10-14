@@ -92,7 +92,7 @@ test("MCP runtime is shared by normal and isolated turns and run waits for clean
   let round = 0;
   const runtime = { enabled: true, diagnostics: [], callTool: async () => { calls += 1; return { output: "ok" }; }, close: () => { closes += 1; return cleanup; } };
   const client = new MiroAgentClient({ settings: { miro: { models: ["m1"], model: "m1" }, skills: false }, dependencies: {
-    mcpRuntime: runtime, modelsFile: null, oauthModels: { getModels: () => [] },
+    mcpRuntime: runtime, modelsFile: null,
     streamCompletion: async function* () { if (round++ % 2 === 0) yield { type: "tool_calls", calls: [call] }; else yield { type: "text", text: "done" }; },
   } });
   let finished = false;

@@ -95,6 +95,7 @@ Codemode 的 QuickJS 依赖必须保持按需加载：未开启时不加载声�
 - 组件里的逻辑要覆盖时，先把它抽成不依赖 React/Ink 的纯函数再测：`src/components/picker/picker-*.ts`、`src/components/picker/picker-viewport.ts`、`src/input/use-input-cursor.ts` 的 `caretPosition`、`App.tsx` 的 `isClockRunning` / `refreshActiveGoal` 都是这么来的，组件文件本身只留接线。
 - `test/paste-block.render.smoke.ts` 是唯一直接渲染组件的脚本（手动运行，不在 `bun test` 发现内），必须显式设定终端尺寸（`process.stdout.columns/rows`）。
 - CI（`.github/workflows/ci.yml`）跑 `bun check` → `bun test` → 三条原有 smoke 各自独立一步 → `bun run build` → JS bundle → codemode 构建 smoke → `bun run build:js` → Node 单体产物 smoke；`release.yml` 只在打 `v*` tag 时跑 `bun check`、`bun test` 并交叉编译四个平台。
+- npm 发布（`.github/workflows/publish.yml`）同样由 `v*` tag 触发：校验 tag 与 `package.json` 版本一致，跑 `bun check`、`bun test`、Node 单体 smoke 与 `npm pack --dry-run` 后经 npm Trusted Publisher（OIDC，不用 token）发布 `mirocode`。npm 侧登记的就是这个文件名，不要改名。预发布版本（`x.y.z-beta.n`）发到同名 dist-tag 而不是 `latest`；对已发布版本重跑只校准 dist-tag。
 
 改 transcript 或组件时，先跑 `src/transcript/store.test.ts` 与最近的纯逻辑测试；画面本身不上自动化，也不要回头补渲染用例或 tmux 用例，目视确认即可。
 

@@ -1,0 +1,110 @@
+name: Publish
+
+# 打 tag（v*）时把 Node 单体产物发布到 npm（包名 mirocode）。
+#
+# 鉴权走 npm Trusted Publisher（OIDC）：npm 侧登记的是 metowolf/miro 仓库的 publish.yml，
+# 所以本文件不能改名，也不需要 NPM_TOKEN。OIDC 发布要求 npm >= 11.5.1，
+# 并会自动附带 provenance 证明。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要（重新）发布的 tag，例如 v0.1.0"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+# 同一个 tag 只允许一次发布在跑，避免重复触发时互相抢版本号。
+concurrency:
+  group: publish-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted Publisher 依赖较新的 npm CLI，runner 自带的版本不一定够。
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Resolve version
+        id: version
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v${version}" != "${TAG}" ]; then
+            echo "::error::tag ${TAG} 与 package.json 的版本 ${version} 不一致"
+            exit 1
+          fi
+          # 预发布版本（如 1.2.0-beta.1）发到同名 dist-tag，不能覆盖 latest。
+          case "${version}" in
+            *-*)
+              dist_tag="${version#*-}"
+              dist_tag="${dist_tag%%.*}"
+              ;;
+            *)
+              dist_tag="latest"
+              ;;
+          esac
+          if npm view "mirocode@${version}" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=${dist_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.version.outputs.published == 'false'
+        run: bun install --frozen-lockfile
+
+      - name: Check TypeScript
+        if: steps.version.outputs.published == 'false'
+        run: bun check
+
+      - name: Test
+        if: steps.version.outputs.published == 'false'
+        run: bun test
+
+      # 先构建并跑一遍 Node 单体产物 smoke，确认要发出去的就是能跑的那份。
+      # npm publish 的 prepack 会再重建一次，产物内容一致。
+      - name: Build Node bundle
+        if: steps.version.outputs.published == 'false'
+        run: bun run build:js
+
+      - name: Smoke test (Node bundle)
+        if: steps.version.outputs.published == 'false'
+        run: bun test ./test/node-bundle.smoke.ts
+
+      - name: Inspect tarball
+        if: steps.version.outputs.published == 'false'
+        run: npm pack --dry-run
+
+      - name: Publish
+        if: steps.version.outputs.published == 'false'
+        run: npm publish --access public --tag "${{ steps.version.outputs.dist_tag }}"
+
+      # 重跑已发布过的版本时只校准 dist-tag，不重复发布。
+      - name: Sync dist-tag
+        if: steps.version.outputs.published == 'true'
+        run: npm dist-tag add "mirocode@${{ steps.version.outputs.version }}" "${{ steps.version.outputs.dist_tag }}"

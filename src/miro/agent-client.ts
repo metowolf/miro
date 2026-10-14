@@ -13,7 +13,6 @@ import {
 import { startBash } from "../terminal/bash.ts";
 import { loadSessionBlocks } from "../session/session-store.ts";
 import { readSystemSettings, writeSystemSettings } from "../config/settings-file.ts";
-import { normalizeDisabledTools, saveDisabledTools } from "../config/settings.ts";
 import { loadMcpServers } from "../mcp/mcp-config.ts";
 import { loginMcp } from "../mcp/mcp-oauth.ts";
 import { McpRuntime } from "../mcp/mcp-runtime.ts";
@@ -252,7 +251,6 @@ export class MiroAgentClient extends EventEmitter {
       model: this.config.model,
       effort: this.config.effort,
       thinking: this.config.thinking,
-      disabledTools: this.config.disabledTools,
       sandboxEnabled: this.config.sandboxEnabled,
       codemodeEnabled: this.config.codemodeEnabled,
       protocol: this.config.protocol,
@@ -751,7 +749,6 @@ export class MiroAgentClient extends EventEmitter {
       retryBaseDelayMs: this.config.retryBaseDelayMs,
       // 缺省开启：不设这个字段时 agent-loop 按 !== false 判定为开。
       autoCompact: this.config.autoCompact,
-      disabledTools: this.config.disabledTools,
       sandboxEnabled: this.config.sandboxEnabled,
       codemodeEnabled: this.config.codemodeEnabled,
       interactive: this.interactive,
@@ -1085,21 +1082,6 @@ export class MiroAgentClient extends EventEmitter {
       await (this.dependencies.writeSystemSettings ?? writeSystemSettings)(nextSettings);
       this.settings = nextSettings;
       this.config.codemodeEnabled = value === "on";
-    } else if (configId.startsWith("tool:")) {
-      const name = configId.slice("tool:".length);
-      const known = this.configOptions
-        .find((option) => option.id === "tools")?.tools
-        ?.some((option) => option.id === configId);
-      if (!known || (value !== "enabled" && value !== "disabled")) {
-        throw new Error(`tool setting "${name}" is not available`);
-      }
-      const disabled = new Set<any>(normalizeDisabledTools(this.config.disabledTools));
-      if (value === "disabled") disabled.add(name);
-      else disabled.delete(name);
-      const next = [...disabled];
-      await (this.dependencies.saveDisabledTools ?? saveDisabledTools)(next);
-      this.config.disabledTools = next;
-      this.settings = { ...this.settings, disableTools: next };
     } else {
       throw new Error(`config option "${configId}" is not supported by Miro's built-in agent`);
     }

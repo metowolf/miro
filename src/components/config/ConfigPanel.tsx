@@ -10,8 +10,8 @@ import { configChoices } from "../../acp/model.ts";
 import { Picker } from "../picker/Picker.tsx";
 
 /**
- * /config 面板。普通项是两级；Tools 先进入工具列表，二值工具在该层直接切换。
- * 因此边框、选中标记、搜索、滚动提示与其它 picker 完全一致。
+ * /config 面板。两级：先选项、再取值，边框、选中标记、搜索、滚动提示
+ * 与其它 picker 完全一致。
  *
  * 与 PickerFlow 的区别：改完一项后仍留在面板里继续调其它项，
  * 不是「走完即关闭」的向导，故不套用 picker-flow。
@@ -28,13 +28,12 @@ export function ConfigPanel({
 
   const listed = options.filter((option) => option?.id);
   const picking = pickingId ? listed.find((option) => option.id === pickingId) : null;
-  const valueOption = picking;
 
-  const valuePicker = valueOption && picking?.type !== "tools" ? (
+  const valuePicker = picking ? (
     <Picker
-      key={`config-value-${valueOption.id}`}
-      title={valueOption.name ?? valueOption.id}
-      items={configChoices(valueOption).map((choice) => ({
+      key={`config-value-${picking.id}`}
+      title={picking.name ?? picking.id}
+      items={configChoices(picking).map((choice) => ({
         value: choice.value,
         label: choice.groupName
           ? `${choice.groupName} / ${choice.name ?? choice.value}`
@@ -46,32 +45,9 @@ export function ConfigPanel({
       canGoBack
       onSelect={(item) => {
         setPickingId(null);
-        if (item?.value != null && item.value !== valueOption.currentValue) {
-          onChange?.(valueOption, item.value);
+        if (item?.value != null && item.value !== picking.currentValue) {
+          onChange?.(picking, item.value);
         }
-      }}
-      onCancel={() => setPickingId(null)}
-    />
-  ) : null;
-
-  const toolsPicker = picking?.type === "tools" ? (
-    <Picker
-      key="config-tools"
-      title="Tools"
-      items={(picking.tools ?? []).map((tool) => ({
-        value: tool.id,
-        label: tool.name ?? tool.id,
-        right: configDisplayValue(tool),
-        description: configDisplayValue(tool),
-        disabled: isConfigOptionLocked(tool),
-      }))}
-      emptyText="No tools available"
-      canGoBack
-      // 工具是二值开关；在工具列表按 Enter 即切换，不再多进一层 picker。
-      onSelect={(item) => {
-        const tool = (picking.tools ?? []).find((entry) => entry.id === item?.value);
-        const next = toggleConfigValue(tool);
-        if (next != null && next !== tool?.currentValue) onChange?.(tool, next);
       }}
       onCancel={() => setPickingId(null)}
     />
@@ -82,11 +58,7 @@ export function ConfigPanel({
    * 只有一个值时该行已置灰，走不到这里。
    */
   const activate = (option) => {
-    if (switching || !option || (option.type !== "tools" && isConfigOptionLocked(option))) return;
-    if (option.type === "tools") {
-      setPickingId(option.id);
-      return;
-    }
+    if (switching || !option || isConfigOptionLocked(option)) return;
     const choices = configChoices(option);
     if (choices.length === 2) {
       const next = toggleConfigValue(option);
@@ -115,7 +87,7 @@ export function ConfigPanel({
               // 否则按行上可见的当前值（如 Fast）搜索会无结果。
               description: [option.category ?? "", display].filter(Boolean).join(" "),
               // 可选值不足两项时无法切换，整行置灰并跳过导航。
-              disabled: option.type !== "tools" && isConfigOptionLocked(option),
+              disabled: isConfigOptionLocked(option),
             };
           })}
           selected={
@@ -126,7 +98,6 @@ export function ConfigPanel({
           onCancel={() => onCancel?.()}
         />
       </Box>
-      {toolsPicker}
       {valuePicker}
     </>
   );

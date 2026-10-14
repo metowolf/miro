@@ -15,11 +15,9 @@ import { findCatalogModel } from "./models-file.ts";
 import { normalizePermissionMode } from "../permissions/permission-mode.ts";
 import { MIRO_PROVIDER_ID } from "../../config/config.ts";
 import {
-  normalizeDisabledTools,
   readEffortPreference,
   readModelPreference,
 } from "../../config/settings.ts";
-import { activeToolDefinitions } from "../tools/index.ts";
 
 export const MIRO_PROTOCOL_CHOICES = [
   { value: "chat-completions", name: "OpenAI Chat Completions" },
@@ -76,10 +74,6 @@ function selectOption({ id, name, category, currentValue, options }: any) {
     currentValue,
     options,
   };
-}
-
-function toolDisplayName(name) {
-  return name.split("_").map((part) => part[0]?.toUpperCase() + part.slice(1)).join(" ");
 }
 
 function modelPickerOption(entry) {
@@ -155,7 +149,6 @@ export function buildConfigOptions({
   model,
   effort,
   thinking,
-  disabledTools = [],
   sandboxEnabled = false,
   codemodeEnabled = false,
   protocol = DEFAULT_MIRO_PROTOCOL,
@@ -217,26 +210,6 @@ export function buildConfigOptions({
       ],
     }),
   );
-  const disabled = new Set<any>(normalizeDisabledTools(disabledTools));
-  const definitions = activeToolDefinitions(sandboxEnabled).filter((definition) => definition.name !== "codemode" || codemodeEnabled);
-  const disabledCount = definitions.filter((definition) => disabled.has(definition.name)).length;
-  options.push({
-    id: "tools",
-    name: "Tools",
-    category: "tools",
-    type: "tools",
-    currentValue: disabledCount === 0 ? "All enabled" : `${disabledCount} disabled`,
-    tools: definitions.map((definition) => selectOption({
-      id: `tool:${definition.name}`,
-      name: toolDisplayName(definition.name),
-      category: "tools",
-      currentValue: disabled.has(definition.name) ? "disabled" : "enabled",
-      options: [
-        { value: "enabled", name: "Enabled" },
-        { value: "disabled", name: "Disabled" },
-      ],
-    })),
-  });
   return options;
 }
 
@@ -379,7 +352,6 @@ export function readMiroConfig(settings: any = {}, { catalog = [], env = process
       ? config.retryBaseDelayMs
       : DEFAULT_RETRY_BASE_MS,
     temperature: Number.isFinite(config.temperature) ? config.temperature : null,
-    disabledTools: normalizeDisabledTools(settings?.disableTools),
   };
   applyModelConnection(result, selected);
   return result;

@@ -241,7 +241,7 @@ miro 用到的上游写在 `~/.miro/models.json`。打开 `/model` 会重新读�
 
 Codemode 默认关闭，仅适用于内置 Miro agent。用 `/config codemode on` 开启、`/config codemode off` 关闭，两者都会修改 `settings.json` 的 `miro.codemode.enabled`。Print 模式需在启动前将它设为 `true`。普通工具仍然保留。
 
-模型可在独立 QuickJS Worker 内用一段 JavaScript 组合读取、搜索、分页和聚合，只把选定输出交回上下文。脚本能调用 `read_file`、`grep`、`glob` 和已配置的 MCP 桥接，禁用工具不会重新开放；没有宿主 `process`、`fetch`、写文件、Terminal 或 subagent 能力。每次实际 MCP 调用仍遵循普通权限策略，非交互 Manual 会拒绝调用，内部调用保留在 transcript 中。
+模型可在独立 QuickJS Worker 内用一段 JavaScript 组合读取、搜索、分页和聚合，只把选定输出交回上下文。脚本能调用 `read_file`、`grep`、`glob` 和已配置的 MCP 桥接；没有宿主 `process`、`fetch`、写文件、Terminal 或 subagent 能力。每次实际 MCP 调用仍遵循普通权限策略，非交互 Manual 会拒绝调用，内部调用保留在 transcript 中。
 
 每段脚本的 VM 时限为 60 秒、QuickJS 堆为 64 MiB，最多调用 64 次工具、并发读取 8 条，另有工具数据和输出预算。脚本必须 await 工具调用。取消与超时会等待宿主收尾，但不能撤销远端副作用；失败脚本不会自动重放。精确 API 和限制见[工具参考](./docs/tools/codemode.md)。它与 Terminal 沙箱相互独立，不改变 ACP 提供方行为。
 

@@ -4,8 +4,7 @@
 仅 miro provider 支持，默认关闭；原有工具仍然可用，不是 codemode-only 模式。
 
 用 `/config codemode on` 开启，`/config codemode off` 关闭；配置保存在
-`~/.miro/settings.json` 的 `miro.codemode.enabled`。顶层 `disableTools` 同样生效，
-禁用 `codemode` 隐藏入口，禁用某个读取或 MCP 工具也会从脚本能力中移除它。
+`~/.miro/settings.json` 的 `miro.codemode.enabled`。
 
 | 属性 | 值 |
 | --- | --- |

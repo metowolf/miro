@@ -4,18 +4,8 @@ import test from "node:test";
 import {
   readEffortPreference,
   readModelPreference,
-  normalizeDisabledTools,
   withPreference,
 } from "./settings.ts";
-
-test("disableTools is normalized as a distinct miro tool setting", () => {
-  assert.deepEqual(normalizeDisabledTools(["read_file", " read_file ", 1, "", "run_command"]), [
-    "read_file",
-    // 曾用名归一为现在的工具名，旧设置不会在升级后失效。
-    "terminal",
-  ]);
-  assert.deepEqual(normalizeDisabledTools("read_file"), []);
-});
 
 test("miro model / effort preferences read from the top level of settings", () => {
   const settings = { model: "gpt-4o", effort: "high" };

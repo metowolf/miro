@@ -1,6 +1,6 @@
 {
   "name": "mirocode",
-  "version": "0.14.1",
+  "version": "0.14.2",
   "description": "A multi-agent ACP terminal client built with React + Ink",
   "type": "module",
   "bin": {

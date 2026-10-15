@@ -1,5 +1,6 @@
 import { measureElement, useCursor, useStdout } from "ink";
 import { useEffect, useLayoutEffect, useState } from "react";
+import wrapAnsi from "wrap-ansi";
 
 import { DEFAULT_CURSOR, STEADY_BAR_CURSOR, writeCursorShape } from "../terminal/cursor-shape.ts";
 import { stringWidth } from "../render/markdown-width.ts";
@@ -33,8 +34,11 @@ import { useStore } from "../transcript/store.ts";
  *   超宽时只会截断而不会折行，锚点得跟着夹在可见范围内
  * @param options.text 光标前实际渲染的文本。提供它后会按字素模拟 Ink 的折行，
  *   尤其处理 CJK 在奇数列宽下无法塞进最后一格的情况；不提供时使用简单列偏移。
+ * @param options.fullText 整行实际渲染的文本（`text` 必须是它的前缀）。Ink 是按
+ *   单词折行的，光标后面的字符也会影响当前单词落在哪一行，所以提供它时用与 Ink
+ *   相同的 wrap-ansi 折整段文本再定位，中英混排才不会逐行漂移。
  */
-export function useInputCursor(ref, column, { truncate = false, text = null }: any = {}) {
+export function useInputCursor(ref, column, { truncate = false, text = null, fullText = null }: any = {}) {
   const { setCursorPosition } = useCursor();
   const { stdout } = useStdout();
   const [origin, setOrigin] = useState(null);
@@ -66,7 +70,7 @@ export function useInputCursor(ref, column, { truncate = false, text = null }: a
 
   // 在渲染期写、由 useCursor 的 insertion effect 在本次提交里读走：
   // 放进 effect 里写会晚一个提交，光标要等下一次按键才跟上。
-  setCursorPosition(pinned ? caretPosition(origin, column, { truncate, text }) : undefined);
+  setCursorPosition(pinned ? caretPosition(origin, column, { truncate, text, fullText }) : undefined);
 }
 
 /**
@@ -77,13 +81,58 @@ export function useInputCursor(ref, column, { truncate = false, text = null }: a
  * 折行时按终端字素宽度推进：宽字符无法塞入行尾剩余的一格时，先换行再绘制，
  * 这样连续多行 CJK 文本的锚点不会逐行漂移。
  */
-export function caretPosition({ x, y, width }: any, column, { truncate = false, text = null }: any = {}) {
+export function caretPosition({ x, y, width }: any, column, { truncate = false, text = null, fullText = null }: any = {}) {
   if (!(width > 0)) return { x: x + column, y };
   // 截断行（wrap="truncate"）不会折行，超出可见宽度时锚点就停在最后一个
   // 可见格之后；量到的宽度此时等于截断宽度，所以夹到 width 即可。
   if (truncate) return { x: x + Math.min(column, width), y };
+  if (typeof text === "string" && typeof fullText === "string" && fullText.startsWith(text)) {
+    const position = wordWrappedCaretPosition({ x, y, width }, fullText, text.length);
+    if (position) return position;
+  }
   if (typeof text === "string") return wrappedCaretPosition({ x, y, width }, text);
   return { x: x + (column % width), y: y + Math.floor(column / width) };
+}
+
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * 与 Ink 的 `wrap="wrap"` 保持一致：用同一份 wrap-ansi、同一组参数折整段文本，
+ * 再把光标的字符偏移映射到折行结果上。trim: false 时 wrap-ansi 只插入换行、
+ * 不增删字符；一旦对不上（依赖行为变化）返回 null，由调用方退回字符级模拟。
+ */
+function wordWrappedCaretPosition({ x, y, width }: any, fullText, offset) {
+  const wrapped = wrapAnsi(fullText, width, { trim: false, hard: true });
+  let row = 0;
+  let column = 0;
+  let j = 0;
+  const consumeInsertedBreaks = () => {
+    while (wrapped[j] === "\n") {
+      row += 1;
+      column = 0;
+      j += 1;
+    }
+  };
+  for (const { segment, index } of graphemeSegmenter.segment(fullText)) {
+    if (index >= offset) break;
+    if (segment !== "\n") consumeInsertedBreaks();
+    if (!wrapped.startsWith(segment, j)) return null;
+    j += segment.length;
+    if (segment === "\n") {
+      row += 1;
+      column = 0;
+    } else {
+      column += stringWidth(segment);
+    }
+  }
+  // 光标所在字符若被折到下一行，光标也跟过去；原文自带的换行不在这里消费。
+  if (offset < fullText.length && fullText[offset] !== "\n") consumeInsertedBreaks();
+  // 正好写满一行：终端延迟折行，下一个字符会落在下一行行首。
+  if (column >= width) {
+    row += Math.floor(column / width);
+    column %= width;
+  }
+  return { x: x + column, y: y + row };
 }
 
 /** 按终端字素宽度折行，返回文本末尾（光标处）的坐标。 */

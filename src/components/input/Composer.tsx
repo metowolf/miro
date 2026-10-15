@@ -616,6 +616,7 @@ export function Composer({
   const inputCursorText = cursorText(inputSegments);
   useInputCursor(inputRowRef, disabled || locked ? null : cursorColumn(inputSegments), {
     text: inputCursorText,
+    fullText: inputSegments.map((segment) => segment.text).join(""),
   });
   const isPathLikeMode = isFileMode || isPathMode;
   const nameColumnWidth = isPathLikeMode

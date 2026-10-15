@@ -64,10 +64,6 @@ function asString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-// ---------------------------------------------------------------------------
-// frontmatter
-// ---------------------------------------------------------------------------
-
 /**
  * 拆出 frontmatter 与正文。
  *
@@ -118,10 +114,6 @@ export function parseSkillFrontmatter(text) {
     return { present: true, data: {}, body, error: error instanceof Error ? error.message : String(error) };
   }
 }
-
-// ---------------------------------------------------------------------------
-// 扫描
-// ---------------------------------------------------------------------------
 
 /** `~/x` 与相对路径都按「用户输入」处理：相对于 cwd 展开。 */
 function resolveRoot(value, { cwd, home }: any) {
@@ -323,10 +315,6 @@ export function skillsFromSettings(settings) {
   if (raw === false) return { disabled: true, paths: [] };
   return { disabled: false, paths: Array.isArray(raw) ? raw : [] };
 }
-
-// ---------------------------------------------------------------------------
-// 注入
-// ---------------------------------------------------------------------------
 
 function escapeXml(text) {
   return String(text)

@@ -432,8 +432,7 @@ export async function runAgentLoop({
     ...backendForProtocol(config.protocol),
     ...(hasInjectedBackend ? dependencies.backend : {}),
   });
-  // P0 前已有的测试注入点继续有效；新的调用方注入 backend 后优先走
-  // backend，避免迁移期间同时存在旧字段时把新实现静默绕过。
+  // 注入了 backend 就优先用它，否则才回退到测试用的 streamCompletion 注入点。
   const rawStream = hasInjectedBackend ? backend.stream : dependencies.streamCompletion ?? backend.stream;
   const stream = withRequestTimeout(rawStream);
   const requestTimeoutMs = dependencies.requestTimeoutMs ?? DEFAULT_LLM_REQUEST_TIMEOUT_MS;
@@ -666,12 +665,8 @@ export async function runAgentLoop({
     logUsageDebug("assembly", assemblyFingerprint(messages, schemas));
     logUsageDebug("context", toolContextStats(messages));
 
-    // ---------------------------------------------------------------------
-    // 本轮的做工体
-    //
-    // 这些定义必须早于 consumeStream：调用在流里一出现就可能要开跑，而跑它们
+    // 以下定义必须早于 consumeStream：调用在流里一出现就可能要开跑，而跑它们
     // 需要 answer / emit / authorize / execute 都已经就位。
-    // ---------------------------------------------------------------------
 
     // OpenAI 兼容实现要求带 tool_calls 的 assistant 消息后面每个 tool_call_id
     // 都有对应的 tool 消息，否则后续请求整轮被 400 拒绝。中断可能让循环提前
@@ -1052,8 +1047,6 @@ export async function runAgentLoop({
       // 中断前已经流给 UI 的正文要进历史：用户在 transcript 上看得见它，恢复
       // 会话时 hydrateMessages 也会从落盘记录里还原出来，丢掉它会让内存历史与
       // 可见记录分叉，模型下一轮把刚说过的话重说一遍。
-      // 半截的 tool_calls 则必须丢弃：它们拿不到对应的 tool 应答，留在历史里
-      // 会让后续请求整条被拒。
       if (text.length > 0 || keptPrefix) {
         messages.push({
           role: "assistant",
@@ -1090,9 +1083,7 @@ export async function runAgentLoop({
         onUsage({ used, size: config.contextWindow, cost: usage.cost ?? null });
       }
     } else {
-      // 整段历史与本轮产出走同一个估算器。此前一半用 estimateTokens、一半按
-      // 字符数除以 4，而且只数 content——工具密集的会话里 tool_calls 的参数常
-      // 比正文还多，漏算会让状态栏的上下文占用明显偏低。
+      // 整段历史与本轮产出走同一个估算器，口径见 conversationText。
       const used = backend.estimateTokens(`${conversationText(messages)}\n${text}${reasoning}`);
       observedUsed = used;
       onUsage({ used, size: config.contextWindow, cost: null });
@@ -1179,8 +1170,8 @@ export async function runAgentLoop({
       }
 
       emptyRounds += 1;
-      // 历史里只留一份，理由同 PLAN_MODE_REMINDER：anthropic-messages 会把所有
-      // system 消息并进同一个 systemPrompt，催两遍就是同一句话说两次。
+      // 历史里只留一份：anthropic-messages 会把所有 system 消息并进同一个
+      // systemPrompt，催两遍就是同一句话说两次。
       if (!hasNotice(messages, EMPTY_RESPONSE_REMINDER)) {
         messages.push({ role: "system", content: EMPTY_RESPONSE_REMINDER });
       }
@@ -1194,12 +1185,10 @@ export async function runAgentLoop({
     dropTransientNotices(messages);
 
     try {
-      // 抢先批次必须收干净再往下走：它与下面的批次是同一条因果链上的相邻环节，
-      // 批与批之间严格串行是「先 read 再 edit」不被打乱的前提。
+      // 抢先批次先收干净；相邻的可并行调用合并成批，其余各自成批。批与批之间
+      // 严格串行，保证「先 read 再 edit」这类顺序语义不被打乱。
       await Promise.all(eager);
 
-      // 相邻的可并行调用合并成批；其余各自成批。批与批之间严格串行，
-      // 保证「先 read 再 edit」这类顺序语义不被打乱。
       const batches = partitionToolCalls(deferred);
 
       for (const batch of batches) {
@@ -1306,17 +1295,6 @@ const GOAL_NOTICE_PREFIXES = [
   "The current goal is blocked",
 ];
 
-/**
- * 一次调用的审批判定。authorize 与「能否抢跑」共用同一份判断。
- *
- * 必须共用：抢跑的前提是「这次调用不会弹审批框」，一旦两边判定漂移，弹窗就会
- * 和还在流式的正文抢屏幕——而那正是把审批与执行分成两个阶段要避免的事。
- *
- * 全部是同步纯函数调用，getPermissionMode 已由调用方读好传进来：这样 authorize
- * 与抢跑判定拿到的一定是同一时刻的权限模式。
- *
- * @returns {{ mode: string|null, scope: string, confirmable: boolean, rejected: boolean, prompts: boolean }}
- */
 /** Auto 只审查 Terminal 自报 high 或显式退出沙箱的调用。 */
 export function requiresAutoReview(item) {
   return item?.name === "terminal" && (
@@ -1325,6 +1303,12 @@ export function requiresAutoReview(item) {
   );
 }
 
+/**
+ * 一次调用的审批判定。authorize 与「能否抢跑」共用同一份判断。
+ *
+ * 必须共用：抢跑的前提是「这次调用不会弹审批框」，一旦两边判定漂移，弹窗就会
+ * 和还在流式的正文抢屏幕。mode 由调用方读好传入，保证两边拿到同一时刻的权限模式。
+ */
 export function permissionDecision({ item, mode, cwd, alwaysAllowed, alwaysRejected }: any) {
   const scope = permissionScope({ name: item.name, kind: item.kind, rawInput: item.rawInput, cwd });
   const confirmable = Boolean(item.kind) && CONFIRM_KINDS.has(item.kind);
@@ -1357,10 +1341,6 @@ export function permissionDecision({ item, mode, cwd, alwaysAllowed, alwaysRejec
   };
 }
 
-/**
- * Manual 的「总是允许 / 总是拒绝」记忆粒度由 permission-mode.ts 统一构造：
- * 命令绑定完整文本、工作目录、沙箱与网络形态，文件写入绑定目标路径。
- */
 /**
  * 估算上下文占用时要算进去的全部文本。
  *

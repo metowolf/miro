@@ -14,7 +14,6 @@ export const PASTE_MARKER_REGEX = new RegExp(MARKER_SOURCE, "g");
 export const PASTE_MARKER_SINGLE = new RegExp(`^${MARKER_SOURCE}$`);
 
 const ANSI_REGEX =
-  // eslint-disable-next-line no-control-regex
   /[\u001B\u009B][[\]()#;?]*(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~])/g;
 
 /** 去 ANSI、统一换行、展开 Tab、丢掉控制字符。 */

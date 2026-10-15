@@ -77,7 +77,6 @@ export function userFacingHint(target) {
  */
 export const SIMPLIFY_RUBRIC = simplifyPrompts(DEFAULT_LANGUAGE).SIMPLIFY_RUBRIC;
 
-/** 取指定语言的 rubric。 */
 export function simplifyRubricFor(language) {
   return simplifyPrompts(language).SIMPLIFY_RUBRIC;
 }

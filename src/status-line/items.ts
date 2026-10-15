@@ -105,7 +105,6 @@ function usedPercent(usage) {
   return Math.min(100, Math.max(0, Math.round((used / size) * 100)));
 }
 
-/** 运行态文本。 */
 function runStateText(snapshot) {
   if (snapshot.cancelling) return "Interrupting";
   if (!snapshot.busy) return "Ready";

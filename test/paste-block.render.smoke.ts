@@ -76,7 +76,6 @@ const app = render(
 );
 
 const wait = (ms) => new Promise<any>((resolve) => setTimeout(resolve, ms));
-// eslint-disable-next-line no-control-regex
 const stripAnsi = (text) => text.replace(/\u001B\[[0-9;?]*[A-Za-z]/g, "");
 /**
  * 取最近一帧「有实际画面」的输出：Ink 会单独发出只含控制序列的帧

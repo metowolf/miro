@@ -167,7 +167,6 @@ export function resolveStartupEffort(config, startupEffort, savedEffort) {
   return { value: matched?.value ?? null, unavailable: startupEffort != null && !matched };
 }
 
-/** 构造审批选项。 */
 export function buildPermissionDialogItems(options) {
   const kindRank = { allow_once: 0, allow_session: 1, allow_family: 2, reject_once: 3, reject_always: 4 };
   const sorted = [...(options ?? [])].sort(
@@ -311,7 +310,6 @@ export function ComposerSurface({ hidden, disabled, ...props }: any) {
   );
 }
 
-/** 会话列表用的相对时间。 */
 function emptyComposerSnapshot() {
   return { value: "", cursor: 0, pastes: new Map<any, any>(), nextPasteId: 1 };
 }
@@ -1112,7 +1110,6 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     if (typeof client?.reloadSessionOptions === "function") client.reloadSessionOptions();
   };
 
-  /** 模型操作前置保护。 */
   const guardModelChoices = () => {
     const store = useStore.getState();
     if (store.overlay || store.switching) return null;
@@ -1205,7 +1202,6 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     }
   };
 
-  /** effort 操作前置保护。 */
   const guardEffortChoices = () => {
     const store = useStore.getState();
     if (store.overlay || store.switching) return null;
@@ -1597,7 +1593,6 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     void applyMode(nextId);
   };
 
-  /** 会话操作前置保护。 */
   const guardSessions = () => {
     const store = useStore.getState();
     if (store.overlay || store.switching) return null;
@@ -1690,7 +1685,6 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     startClient(provider, null);
   };
 
-  /** 列出已保存会话。 */
   const listSessionsSummary = () => {
     const sessions = guardSessions();
     if (!sessions) return;
@@ -2665,7 +2659,6 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
     }
   };
 
-  /** 按序发送排队输入。 */
   const drainQueue = () => {
     const state = useStore.getState();
     if (state.busy || state.status !== "ready" || state.switching || state.queuePaused || state.overlay?.kind === "queue-review") return;

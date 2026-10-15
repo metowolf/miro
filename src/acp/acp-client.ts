@@ -350,21 +350,18 @@ export class AcpClient extends EventEmitter {
     await this.setConfigOption(config.id, on);
   }
 
-  /** 切换模型。 */
   async setModel(value) {
     await this.setConfigOption(this.modelConfig.id, value);
     await this.enableThinking().catch(() => {});
     return currentModelName(this.modelConfig);
   }
 
-  /** 设置思考强度。 */
   async setEffort(value) {
     await this.enableThinking().catch(() => {});
     await this.setConfigOption(this.effortConfig.id, value);
     return currentEffortName(this.effortConfig) ?? value;
   }
 
-  /** 切换会话模式。 */
   async setMode(modeId) {
     await this.context.request(acp.methods.agent.session.setMode, {
       sessionId: this.sessionId,

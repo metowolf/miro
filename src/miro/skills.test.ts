@@ -36,10 +36,6 @@ function sandbox() {
 const skillDoc = (name, description, extra = "") =>
   `---\nname: ${name}\ndescription: ${description}\n${extra}---\n\nBody of ${name}.\n`;
 
-// ---------------------------------------------------------------------------
-// frontmatter
-// ---------------------------------------------------------------------------
-
 test("parses simple frontmatter and strips the body", () => {
   const parsed = parseSkillFrontmatter("---\nname: pdf\ndescription: Work with PDFs.\n---\n\nDo the thing.\n");
   assert.equal(parsed.present, true);
@@ -174,10 +170,6 @@ test("frontmatter 上限按 UTF-8 字节计算", () => {
   const parsed = parseSkillFrontmatter(`---\ndescription: ${"你".repeat(MAX_FRONTMATTER_BYTES / 2)}\n---\nbody`);
   assert.equal(parsed.tooLarge, true);
 });
-
-// ---------------------------------------------------------------------------
-// 扫描
-// ---------------------------------------------------------------------------
 
 test("default scan root order follows ascending priority, explicit paths last", () => {
   const roots = skillRoots({ cwd: "/repo", home: "/home/u", extraPaths: ["~/extra", "rel", "", 42] });
@@ -366,10 +358,6 @@ test("标准 YAML 类型仍受 Skill 字段校验约束", () => {
   assert.equal(skills[0].disableModelInvocation, false);
   assert.deepEqual(diagnostics.map((entry) => entry.code), Array(3).fill("missing-description"));
 });
-
-// ---------------------------------------------------------------------------
-// 注入与展开
-// ---------------------------------------------------------------------------
 
 test("catalog format and XML escaping", () => {
   const text = formatSkillsForPrompt([

@@ -17,7 +17,6 @@ import { DEFAULT_LANGUAGE } from "./prompts/language.ts";
 import { readLanguageSetting } from "../config/settings-file.ts";
 
 const GIT_TIMEOUT_MS = 3000;
-/** 提交列表上限。 */
 export const COMMIT_LIMIT = 100;
 
 /** 执行 git 并返回 stdout；失败一律返回 null 而不抛错。 */
@@ -139,7 +138,6 @@ export function userFacingHint(target) {
  */
 export const REVIEW_RUBRIC = reviewPrompts(DEFAULT_LANGUAGE).REVIEW_RUBRIC;
 
-/** 取指定语言的 rubric。 */
 export function reviewRubricFor(language) {
   return reviewPrompts(language).REVIEW_RUBRIC;
 }

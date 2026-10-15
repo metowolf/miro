@@ -188,7 +188,6 @@ export function Composer({
       });
     }, FILE_SUGGESTION_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathTokenKey]);
 
   const tokenKey = dismissed ? null : fileSuggestionKey(fileToken);
@@ -205,7 +204,6 @@ export function Composer({
     };
     // tokenKey 已包含位置和完整令牌，不能依赖每次渲染都会新建的 fileToken 对象。
     // 切换会话会清空候选；即使两个草稿的令牌相同，也必须重新请求。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokenKey, sessionKey]);
   const fileQuery = pickerQueryState(fileSuggestions, tokenKey);
 
@@ -293,7 +291,6 @@ export function Composer({
     restoredSessionKeyRef.current = sessionKey;
     restoreSnapshot(initialSnapshot, { notify: false, resetHistory: true });
     // 草稿只在会话身份变化时恢复；普通重渲染不能覆盖用户正在输入的内容。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey]);
 
   /** 清空输入框的全部可见与隐藏状态（粘贴表必须一起丢，否则只剩孤立标记的 registry）。 */

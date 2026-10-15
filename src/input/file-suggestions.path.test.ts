@@ -13,10 +13,6 @@ import {
   isCommandPosition,
 } from "./file-suggestions.ts";
 
-// ---------------------------------------------------------------------------
-// extractPathToken
-// ---------------------------------------------------------------------------
-
 describe("extractPathToken", () => {
   test("plain token: takes everything after the last space", () => {
     expect(extractPathToken("! cat src/co", 12)).toEqual({
@@ -47,10 +43,6 @@ describe("extractPathToken", () => {
     expect(extractPathToken("! cat src/co more", 12).token).toBe("src/co");
   });
 });
-
-// ---------------------------------------------------------------------------
-// generatePathSuggestions（临时目录树）
-// ---------------------------------------------------------------------------
 
 let cwd;
 
@@ -125,10 +117,6 @@ describe("generatePathSuggestions", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// applyPathSuggestion
-// ---------------------------------------------------------------------------
-
 describe("applyPathSuggestion", () => {
   test("directory appends / and the cursor lands after the /", () => {
     const chars = [..."! cat sr"];
@@ -191,10 +179,6 @@ describe("applyPathSuggestion", () => {
     expect(nextCursor).toBe(7);
   });
 });
-
-// ---------------------------------------------------------------------------
-// 命令位补全：isCommandPosition / generateCommandNameSuggestions / 统一入口
-// ---------------------------------------------------------------------------
 
 describe("isCommandPosition", () => {
   test("start of line (including the immediate ! prefix) is a command position", () => {

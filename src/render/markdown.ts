@@ -371,7 +371,6 @@ function wrapTableText(text, width, hard = false) {
       wordWrap: true,
     });
   } else {
-    // This path is only for non-Bun consumers; Miro itself requires Bun.
     wrapped = wrapPlainText(stripAnsi(trimmedText), width, hard).join(EOL);
   }
   const lines = wrapped.split(EOL).filter((line) => line.length > 0);

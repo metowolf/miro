@@ -1,9 +1,8 @@
 /**
  * miro LLM 调用的共享常量与估算器。
  *
- * 协议适配已经迁到 pi-ai-backend.ts；这里不再手写 SSE。留下的是
- * estimateTokens（无 usage 时的水位估算）以及 withStreamRetry 仍在用的
- * 退避/分类工具——后者只服务自身不带重试的 backend，pi-ai 路径不走这里。
+ * 协议适配在 pi-ai-backend.ts。这里只有 estimateTokens（无 usage 时的水位估算）
+ * 以及 withStreamRetry 用的退避/分类工具，后者只服务自身不带重试的 backend。
  */
 
 /**
@@ -15,7 +14,6 @@
  * 每次都是 60s 上限。
  */
 export const DEFAULT_STREAM_MAX_RETRIES = 10;
-/** 退避基数。 */
 export const DEFAULT_RETRY_BASE_MS = 1_000;
 /** 退避上限，避免 429 带来的等待失控。 */
 export const MAX_RETRY_DELAY_MS = 60_000;

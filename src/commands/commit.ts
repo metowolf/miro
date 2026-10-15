@@ -288,7 +288,6 @@ export function userFacingHint(target) {
  */
 export const COMMIT_RUBRIC = commitPrompts(DEFAULT_LANGUAGE).COMMIT_RUBRIC;
 
-/** 取指定语言的 rubric。 */
 export function commitRubricFor(language) {
   return commitPrompts(language).COMMIT_RUBRIC;
 }

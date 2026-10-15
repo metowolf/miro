@@ -11,7 +11,6 @@ export const TOOL_PREVIEW_MAX_LINES = 5;
 /** 命令正文的保留上限：只为挡住畸形超长参数，正常命令远小于此。 */
 const COMMAND_TEXT_MAX_CHARS = 10_000;
 
-/** 预览单行最大字符数。 */
 const PREVIEW_LINE_MAX_CHARS = 200;
 
 /** 完整审阅仍需有内存上限，避免单个工具结果撑爆会话文件。 */

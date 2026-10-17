@@ -314,7 +314,7 @@ export function readMiroConfig(settings: any = {}, { catalog = [], env = process
   const fromFile = Array.isArray(catalog) && catalog.length > 0;
   const models = fromFile ? catalog : normalizeModels(config.models);
 
-  // 顶层 model / effort 就是 miro 的持久偏好（saveModel / withPreference 写在顶层）。
+  // 顶层 model / effort 就是 miro 的持久偏好（saveModel / withMiroPreference 写在顶层）。
   // 目录模型的 key 固定为 provider/id，和 settings 里记下的值对齐。启动选择必须
   // 读它：否则新建会话要等 App 补一次 setModel，而恢复会话（刻意不套偏好）会静默
   // 停在目录的第一个模型上。偏好匹配不到目录条目时才退回 miro.model。

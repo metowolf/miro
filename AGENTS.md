@@ -164,9 +164,9 @@ Auto 权限判定不解析命令文本，不要重新加入 `rm`、`curl`、重�
 
 ## 设置、provider 与会话
 
-`~/.miro/settings.json` 是唯一的系统配置文件（读写集中在 `settings-file.ts` / `settings.ts`），miro 的 LLM 端点目录则是 `~/.miro/models.json`（`src/miro/config/models-file.ts` + `src/miro/config/config-options.ts`）。`providers.ts` 把自定义 provider 与内建项合并，并视 miro 为永远可用；启动 provider 可以持久化，但显式 CLI `--provider`、`--model`、`--effort` 是单次覆盖，不能悄悄写回设置。
+`~/.miro/settings.json` 是系统偏好配置文件（读写集中在 `settings-file.ts` / `settings.ts`）；ACP provider 定义与它们各自的 `model` / `effort` 偏好放在 `~/.miro/acp.json`（`acp-file.ts`，顶层直接是 id → 定义的表，`settings.json` 的 `providers` 字段不再读取）；miro 的 LLM 端点目录则是 `~/.miro/models.json`（`src/miro/config/models-file.ts` + `src/miro/config/config-options.ts`）。`providers.ts` 把 `acp.json` 里的自定义 provider 与内建项合并，并视 miro 为永远可用；启动 provider 可以持久化，但显式 CLI `--provider`、`--model`、`--effort` 是单次覆盖，不能悄悄写回设置。
 
-model / effort 偏好按 provider 分别记忆（miro 在 settings 顶层，ACP 在各自的 `providers.<id>` 下）；改模型目录时注意它同时决定 API 连接方式与可用 effort 档位。
+model / effort 偏好按 provider 分别记忆（miro 在 settings 顶层，ACP 在 `acp.json` 的同名条目下）；改模型目录时注意它同时决定 API 连接方式与可用 effort 档位。
 
 启动上下文由 `src/config/agents-md.ts` 组装（`~/.miro/AGENTS.md` 与 `./AGENTS.md`），只在首个普通 prompt 注入、恢复会话时跳过，TUI 与 headless 两条路径都必须传。
 

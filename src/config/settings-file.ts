@@ -8,7 +8,8 @@ import { normalizeThinkingDisplayMode } from "../transcript/thinking.ts";
 /**
  * 系统配置：~/.miro/settings.json
  *
- * 唯一配置文件：provider / model / effort 偏好与 statusLine、language 等系统设置都写在这里。
+ * miro 的 model / effort 偏好与 statusLine、language 等系统设置写在这里；
+ * ACP provider 定义与它们的偏好单独放在 ~/.miro/acp.json（acp-file.ts）。
  */
 
 export const MIRO_DIR = path.join(os.homedir(), ".miro");

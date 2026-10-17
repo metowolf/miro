@@ -162,7 +162,16 @@ Visible thinking blocks retain only metadata; Miro model-context checkpoints als
 
 ## ACP providers
 
-Miro uses its built-in agent by default. Start an ACP provider explicitly with `miro --acp <id>`; its binary must be on `PATH`. Add or override ACP definitions in `~/.miro/settings.json` under `providers.<id>` = `{ command | bin, args, name }`. Miro stores an ACP provider's last `/model` and `/effort` choice as `model` / `effort` in that same entry.
+Miro uses its built-in agent by default. Start an ACP provider explicitly with `miro --acp <id>`; its binary must be on `PATH`. Add or override ACP definitions in `~/.miro/acp.json`, whose top level maps each id to `{ command | bin, args, name, sessionMeta }`:
+
+```json
+{
+  "knot": { "command": "knot-cli", "args": ["acp"] },
+  "my-cursor": { "command": "cursor-agent", "args": ["acp"], "name": "Cursor (work)" }
+}
+```
+
+Miro stores an ACP provider's last `/model` and `/effort` choice as `model` / `effort` in that same entry. The `providers` object in `~/.miro/settings.json` is no longer read.
 
 | Id | Name | Binary |
 |----|------|--------|
@@ -234,7 +243,7 @@ If `models.json` is missing or has no usable models, miro falls back to the `mir
 
 Use `/config sandbox on` or `/config sandbox off` to update this setting and switch the command tool's sandboxing in the current session.
 
-`/model` and `/effort` choices are remembered per provider. Miro uses top-level `model` / `effort` in `settings.json`, and records the model as `provider/id`; an ACP provider uses its own `providers.<id>` entry. The `model` / `effort` entries inside `miro` are fallback defaults when the top-level preference is absent or unavailable. Miro's `Default` / `Plan` interaction mode is independent from its `Auto` / `Manual` permission mode; `Shift+Tab` cycles the interaction mode.
+`/model` and `/effort` choices are remembered per provider. Miro uses top-level `model` / `effort` in `settings.json`, and records the model as `provider/id`; an ACP provider keeps its own entry in `~/.miro/acp.json`. The `model` / `effort` entries inside `miro` are fallback defaults when the top-level preference is absent or unavailable. Miro's `Default` / `Plan` interaction mode is independent from its `Auto` / `Manual` permission mode; `Shift+Tab` cycles the interaction mode.
 
 ### Codemode (experimental)
 
@@ -310,7 +319,7 @@ Composer history is independent of the transcript, at `~/.miro/history.jsonl`.
 
 ## Configuration
 
-Model, effort, prompt-language, status-line, and custom ACP-provider preferences live in `~/.miro/settings.json`. Its legacy top-level `provider` value is ignored. Miro LLM endpoints and models are imported only from `~/.miro/models.json`. `/config` changes both the live ACP options advertised as `configOptions` and miro's own `language` option.
+Model, effort, prompt-language, and status-line preferences live in `~/.miro/settings.json`; ACP provider definitions and their own `model` / `effort` preferences live in `~/.miro/acp.json`. A legacy top-level `provider` value in `settings.json` is ignored, as is its `providers` object. Miro LLM endpoints and models are imported only from `~/.miro/models.json`. `/config` changes both the live ACP options advertised as `configOptions` and miro's own `language` option.
 
 ### Permission mode
 

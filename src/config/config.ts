@@ -177,16 +177,17 @@ Providers:
   $ANTHROPIC_API_KEY; models accepts strings or { "id", "name",
   "contextWindow" } entries.
   Provider-specific slash commands advertised by ACP are forwarded as-is.
-  Add or override providers with the "providers" object in
-  ~/.miro/settings.json, e.g.
-  {"providers":{"demo":{"command":"demo-cli","args":["acp"],"name":"Demo"}}}
-  Each entry maps an id to { "command", "args", "name", "sessionMeta" }
+  Add or override providers in ~/.miro/acp.json, whose top level maps an
+  id to its definition, e.g.
+  {"demo":{"command":"demo-cli","args":["acp"],"name":"Demo"}}
+  Each entry is { "command", "args", "name", "sessionMeta" }
   (args, name, and sessionMeta are optional; "bin" is accepted as an alias
   for "command"). sessionMeta is forwarded as session/new _meta so agents
   that key on fields like agentId can bind the session. Entries sharing an
   id with a built-in provider override it. miro also records that
   provider's last /model and /effort choice as "model" / "effort" in the
-  same entry, so built-in providers may have an entry without "command".
+  same acp.json entry, so built-in providers may have an entry without
+  "command".
 
 Sessions:
   Visible transcripts are saved under
@@ -202,10 +203,10 @@ Context:
 
 Configuration:
   ~/.miro/settings.json  System settings: statusLine, statusLineUseColors,
-                         language (built-in prompt language), providers
-                         (custom ACP providers), and per-provider saved
-                         model / effort preferences (miro keeps its
-                         preference at the top level)
+                         language (built-in prompt language), and miro's
+                         saved model / effort preferences
+  ~/.miro/acp.json       ACP provider definitions and their saved
+                         model / effort preferences
   ~/.miro/models.json    Miro LLM providers and models (pi-compatible)
   /config                Live ACP session options advertised in configOptions,
                          plus miro's own "language" option

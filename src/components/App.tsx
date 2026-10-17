@@ -1004,7 +1004,7 @@ export function App({ continueSessionId = null, startupAcp = null, startupModel 
   /**
    * 启动参数优先于已保存的 model 偏好，并支持按 value / name 匹配。
    * 偏好按 provider 分别记忆（miro 在 settings 顶层，ACP 在
-   * providers.<id> 下），切换 provider 时读回各自的记录；匹配不到时静默跳过。
+   * acp.json 的同名条目下），切换 provider 时读回各自的记录；匹配不到时静默跳过。
    */
   const applyStartupModel = async (config) => {
     const store = useStore.getState();

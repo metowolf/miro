@@ -162,7 +162,16 @@ ACP 声明的提供方专用斜杠命令会原样转发。
 
 ## ACP 提供方
 
-Miro 默认使用自带 agent。要进入 ACP，显式使用 `miro --acp <id>`；对应二进制必须在 `PATH` 上。也可以在 `~/.miro/settings.json` 的 `providers.<id>` = `{ command | bin, args, name }` 新增或覆盖 ACP 定义。Miro 会把 ACP 提供方上次 `/model` 与 `/effort` 的选择记在同一条目的 `model` / `effort` 里。
+Miro 默认使用自带 agent。要进入 ACP，显式使用 `miro --acp <id>`；对应二进制必须在 `PATH` 上。也可以在 `~/.miro/acp.json` 新增或覆盖 ACP 定义，该文件顶层就是 id → `{ command | bin, args, name, sessionMeta }` 的表：
+
+```json
+{
+  "knot": { "command": "knot-cli", "args": ["acp"] },
+  "my-cursor": { "command": "cursor-agent", "args": ["acp"], "name": "Cursor (work)" }
+}
+```
+
+Miro 会把 ACP 提供方上次 `/model` 与 `/effort` 的选择记在同一条目的 `model` / `effort` 里。`~/.miro/settings.json` 里的 `providers` 字段不再读取。
 
 | Id | 名称 | 二进制 |
 |----|------|--------|
@@ -234,7 +243,7 @@ miro 用到的上游写在 `~/.miro/models.json`。打开 `/model` 会重新读�
 
 可用 `/config sandbox on` 或 `/config sandbox off` 持久化修改这个开关，并立即切换当前会话命令工具的沙箱状态。
 
-`/model` 与 `/effort` 的选择按提供方分别记忆。`miro` 使用 `settings.json` 顶层的 `model` / `effort`，其中 `model` 记为 `provider/id`；ACP 提供方则存在自己的 `providers.<id>` 条目里。`miro` 对象里的 `model` / `effort` 只在顶层偏好缺省或匹配不到时作为回退默认值。miro 的 `Default` / `Plan` 交互模式与 `Auto` / `Manual` 权限模式相互独立；`Shift+Tab` 循环交互模式。
+`/model` 与 `/effort` 的选择按提供方分别记忆。`miro` 使用 `settings.json` 顶层的 `model` / `effort`，其中 `model` 记为 `provider/id`；ACP 提供方则存在 `~/.miro/acp.json` 自己的条目里。`miro` 对象里的 `model` / `effort` 只在顶层偏好缺省或匹配不到时作为回退默认值。miro 的 `Default` / `Plan` 交互模式与 `Auto` / `Manual` 权限模式相互独立；`Shift+Tab` 循环交互模式。
 
 ### Codemode（实验性）
 
@@ -310,7 +319,7 @@ miro 会在可见聊天记录之外保存模型上下文检查点，包含压缩
 
 ## 配置
 
-模型、努力程度、提示词语言、状态栏和自定义 ACP 提供方偏好保存在 `~/.miro/settings.json`；其中遗留的顶层 `provider` 会被忽略。miro 的上游与模型列表只从 `~/.miro/models.json` 导入。`/config` 既可修改 ACP 以 `configOptions` 声明的实时选项，也可修改 miro 自己的 `language` 选项。
+模型、努力程度、提示词语言与状态栏偏好保存在 `~/.miro/settings.json`；ACP 提供方定义与它们各自的 `model` / `effort` 偏好保存在 `~/.miro/acp.json`。`settings.json` 里遗留的顶层 `provider` 与 `providers` 字段都会被忽略。miro 的上游与模型列表只从 `~/.miro/models.json` 导入。`/config` 既可修改 ACP 以 `configOptions` 声明的实时选项，也可修改 miro 自己的 `language` 选项。
 
 ### 权限模式
 

@@ -9,13 +9,11 @@ import {
   readCustomProviders,
 } from "./providers.ts";
 
-test("the settings providers field normalizes into provider definitions", () => {
+test("the acp.json provider table normalizes into provider definitions", () => {
   const providers = readCustomProviders({
-    providers: {
-      demo: { command: " demo-cli ", args: ["acp", 42, null], name: "Demo" },
-      minimal: { command: "x-cli" },
-      alias: { bin: "y-cli" },
-    },
+    demo: { command: " demo-cli ", args: ["acp", 42, null], name: "Demo" },
+    minimal: { command: "x-cli" },
+    alias: { bin: "y-cli" },
   });
   assert.deepEqual(providers, [
     { id: "demo", name: "Demo", bin: "demo-cli", args: ["acp"] },
@@ -26,15 +24,13 @@ test("the settings providers field normalizes into provider definitions", () => 
 
 test("custom provider sessionMeta keeps plain objects and drops invalid shapes", () => {
   const providers = readCustomProviders({
-    providers: {
-      routed: {
-        command: "routed-cli",
-        args: ["acp", "--no-update"],
-        sessionMeta: { agentId: "example-agent-id" },
-      },
-      badArray: { command: "x", sessionMeta: ["agentId"] },
-      badScalar: { command: "y", sessionMeta: "agent-id" },
+    routed: {
+      command: "routed-cli",
+      args: ["acp", "--no-update"],
+      sessionMeta: { agentId: "example-agent-id" },
     },
+    badArray: { command: "x", sessionMeta: ["agentId"] },
+    badScalar: { command: "y", sessionMeta: "agent-id" },
   });
   assert.deepEqual(providers.find((provider) => provider.id === "routed").sessionMeta, {
     agentId: "example-agent-id",
@@ -45,31 +41,35 @@ test("custom provider sessionMeta keeps plain objects and drops invalid shapes",
 
 test("invalid custom provider entries are dropped", () => {
   assert.deepEqual(readCustomProviders({
-    providers: {
-      notObject: "demo-cli",
-      array: ["demo-cli"],
-      noCommand: { args: ["acp"] },
-      emptyCommand: { command: "   " },
-      nullEntry: null,
-    },
+    notObject: "demo-cli",
+    array: ["demo-cli"],
+    noCommand: { args: ["acp"] },
+    emptyCommand: { command: "   " },
+    nullEntry: null,
   }), []);
-  assert.deepEqual(readCustomProviders({ providers: [] }), []);
+  assert.deepEqual(readCustomProviders([]), []);
+});
+
+test("a settings.json providers field is not a definition table anymore", () => {
+  // 定义只从 ~/.miro/acp.json 读；settings.json 里遗留的 providers 字段不再生效。
+  assert.deepEqual(
+    readCustomProviders({ providers: { cursor: { command: "cursor-agent" } } }),
+    [],
+  );
 });
 
 test("model / effort-only entries are not provider definitions and do not override built-ins", () => {
-  // settings.ts 会把某个 provider 上次选的模型写进它自己的条目，内置 provider
-  // 因此可能有一条没有 command 的偏好条目；它不能被当成自定义定义。
-  const settings = {
-    providers: {
-      cursor: { model: "sonnet", effort: "high" },
-      codex: { command: "codex-acp", model: "gpt-5" },
-    },
-  };
-  assert.deepEqual(readCustomProviders(settings), [
+  // settings.ts 会把某个 provider 上次选的模型写进 acp.json 的同名条目，内置
+  // provider 因此可能有一条没有 command 的偏好条目；它不能被当成自定义定义。
+  assert.deepEqual(readCustomProviders({
+    cursor: { model: "sonnet", effort: "high" },
+    codex: { command: "codex-acp", model: "gpt-5" },
+  }), [
     { id: "codex", name: "codex", bin: "codex-acp", args: [] },
   ]);
   assert.equal(
-    loadProviders(settings).find((provider) => provider.id === "cursor").bin,
+    loadProviders({ cursor: { model: "sonnet", effort: "high" } })
+      .find((provider) => provider.id === "cursor").bin,
     "cursor-agent",
     "the built-in cursor definition still applies",
   );
@@ -77,10 +77,8 @@ test("model / effort-only entries are not provider definitions and do not overri
 
 test("loadProviders merges custom entries, with the custom definition winning on a shared id", () => {
   const merged = loadProviders({
-    providers: {
-      extra: { command: "extra-cli" },
-      pi: { command: "my-pi", args: ["--verbose"], name: "My Pi" },
-    },
+    extra: { command: "extra-cli" },
+    pi: { command: "my-pi", args: ["--verbose"], name: "My Pi" },
   });
   assert.deepEqual(
     merged.find((provider) => provider.id === "extra"),
@@ -96,7 +94,7 @@ test("loadProviders merges custom entries, with the custom definition winning on
 
 test("custom providers remain before built-in miro in the provider catalog", () => {
   const providers = loadProviders({
-    providers: { fake: { command: "python3", args: ["fake-acp.py"], name: "Fake ACP" } },
+    fake: { command: "python3", args: ["fake-acp.py"], name: "Fake ACP" },
   });
   assert.equal(providers[0].id, "fake");
   assert.equal(providers.at(-1).id, "miro");

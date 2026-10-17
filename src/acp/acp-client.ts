@@ -288,7 +288,7 @@ export class AcpClient extends EventEmitter {
   }
 
   /**
-   * session/new 载荷。settings.providers.*.sessionMeta 有值时放进 `_meta`，
+   * session/new 载荷。acp.json 条目里的 sessionMeta 有值时放进 `_meta`，
    * 让按 agentId 路由的 ACP 后端认出要复用哪条逻辑 agent。
    * 没有配置时不带该字段，避免给不认识扩展的 agent 多一个空对象。
    */

@@ -9,6 +9,7 @@ import {
   modelChoices,
 } from "../acp/model.ts";
 import { isMiroProvider } from "../config/config.ts";
+import { readAcpProviders } from "../config/acp-file.ts";
 import { matchProviderCommand, parseCommandInput } from "../commands/commands.ts";
 import { MiroAgentClient } from "../miro/agent-client.ts";
 import { AUTO_WARNING, MANUAL_WARNING, isAuto, isManual } from "../miro/permissions/permission-mode.ts";
@@ -52,9 +53,9 @@ export async function readPrompt(input, limit = MAX_PROMPT_BYTES) {
   return prompt;
 }
 
-async function applyConfig(client, options, settings, resumed, providerId) {
+async function applyConfig(client, options, settings, resumed, providerId, acpProviders) {
   const models = modelChoices(client.modelConfig);
-  const requestedModel = options.model ?? (!resumed ? readModelPreference(settings, providerId) : null);
+  const requestedModel = options.model ?? (!resumed ? readModelPreference(settings, providerId, acpProviders) : null);
   let model = matchConfigChoice(client.modelConfig, requestedModel);
   if (options.model && !model) throw new Error(`model "${options.model}" is not available`);
   if (!model && !resumed && models.length > 0) model = models[0];
@@ -62,7 +63,7 @@ async function applyConfig(client, options, settings, resumed, providerId) {
   if (typeof client.enableThinking === "function") await client.enableThinking();
 
   const efforts = effortChoices(client.effortConfig);
-  const requestedEffort = options.effort ?? (!resumed ? readEffortPreference(settings, providerId) : null);
+  const requestedEffort = options.effort ?? (!resumed ? readEffortPreference(settings, providerId, acpProviders) : null);
   const effort = matchConfigChoice(client.effortConfig, requestedEffort);
   if (options.effort && !effort) throw new Error(`effort "${options.effort}" is not available`);
   if (effort && effort.value !== client.effortConfig?.currentValue) await client.setEffort(effort.value);
@@ -84,6 +85,7 @@ export async function runHeadless(options, dependencies: any = {}) {
   const Client = dependencies.Client ?? AcpClient;
   const MiroAgent = dependencies.MiroAgentClient ?? MiroAgentClient;
   const settings = dependencies.settings ?? readHomeSettings();
+  const acpProviders = dependencies.acpProviders ?? readAcpProviders();
   const detected = dependencies.providers ?? detectProviders();
   const loadContext = dependencies.loadContext ?? loadStartupContext;
   const createRecorder = dependencies.createRecorder ?? ((record) => new SessionRecorder(record));
@@ -184,7 +186,7 @@ export async function runHeadless(options, dependencies: any = {}) {
     if (readyResult?.signal) return readyResult.signal;
 
     sessionId = readyResult.sessionId;
-    await applyConfig(client, options, settings, readyResult.resumed, provider.id);
+    await applyConfig(client, options, settings, readyResult.resumed, provider.id, acpProviders);
     if (isMiroProvider(provider) && options.interactionMode != null) {
       await client.setMode(options.interactionMode);
     }

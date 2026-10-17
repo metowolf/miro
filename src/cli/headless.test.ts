@@ -98,6 +98,7 @@ function dependencies(stdout, stderr, records): any {
     stdout,
     stderr,
     settings: {},
+    acpProviders: {},
     providers: [{ id: "fake", name: "Fake", bin: "fake-acp", args: [] }],
     loadContext: () => ({ contextText: "rules" }),
     createRecorder: (meta) => ({
@@ -150,18 +151,16 @@ test("text mode prints the final answer and records a resumable transcript", asy
   ]);
 });
 
-// ACP provider 的 model / effort 偏好存在 providers.<id> 下，顶层字段只属于
-// miro：两者一旦互相借用，就会把上一个 provider 的模型名带到另一个身上。
-test("ACP provider applies the model / effort preferences under its own providers.<id>", async () => {
+// ACP provider 的 model / effort 偏好存在 ~/.miro/acp.json 的同名条目下，
+// settings 顶层字段只属于 miro：两者一旦互相借用，就会把上一个 provider
+// 的模型名带到另一个身上。
+test("ACP provider applies the model / effort preferences under its own acp.json entry", async () => {
   const out = capture();
   const err = capture();
   const records = [];
   const deps = dependencies(out.stream, err.stream, records);
-  deps.settings = {
-    model: "m1",
-    effort: "low",
-    providers: { fake: { model: "m2", effort: "high" } },
-  };
+  deps.settings = { model: "m1", effort: "low" };
+  deps.acpProviders = { fake: { model: "m2", effort: "high" } };
   const code = await runHeadless({
     prompt: "question",
     outputFormat: "text",
@@ -181,7 +180,8 @@ test("ACP provider does not borrow top-level settings model / effort preferences
   const err = capture();
   const records = [];
   const deps = dependencies(out.stream, err.stream, records);
-  deps.settings = { model: "m2", effort: "high", providers: {} };
+  deps.settings = { model: "m2", effort: "high" };
+  deps.acpProviders = {};
   const code = await runHeadless({
     prompt: "question",
     outputFormat: "text",

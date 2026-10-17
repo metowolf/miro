@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
+import { readAcpProviders } from "./acp-file.ts";
 import { isMiroProvider, PROVIDERS } from "./config.ts";
-import { readSystemSettings } from "./settings-file.ts";
 
 /** PATH 探测，不 spawn。 */
 
@@ -19,7 +19,7 @@ export function normalizeSessionMeta(raw) {
   return raw;
 }
 
-/** 将 settings.json 中的单个 provider 定义归一化。 */
+/** 将 acp.json 中的单个 provider 定义归一化。 */
 function normalizeCustomProvider(id, definition) {
   if (!definition || typeof definition !== "object" || Array.isArray(definition)) return null;
   const command = definition.command ?? definition.bin;
@@ -35,11 +35,10 @@ function normalizeCustomProvider(id, definition) {
     : { id, name, bin: command.trim(), args };
 }
 
-/** 解析 settings 的 providers 字段。 */
-export function readCustomProviders(settings = readSystemSettings()) {
-  const raw = settings?.providers;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
-  return Object.entries(raw)
+/** 解析 ~/.miro/acp.json 的 provider 定义表。 */
+export function readCustomProviders(definitions = readAcpProviders()) {
+  if (!definitions || typeof definitions !== "object" || Array.isArray(definitions)) return [];
+  return Object.entries(definitions)
     .map(([id, definition]) => normalizeCustomProvider(id, definition))
     .filter((provider) => provider != null);
 }
@@ -49,8 +48,8 @@ export function readCustomProviders(settings = readSystemSettings()) {
  *
  * 顺序是「自定义 → 内置 → miro」；启动默认固定 miro，不依赖这个顺序。
  */
-export function loadProviders(settings = readSystemSettings()) {
-  const custom = readCustomProviders(settings);
+export function loadProviders(definitions = readAcpProviders()) {
+  const custom = readCustomProviders(definitions);
   if (custom.length === 0) return PROVIDERS;
   const builtin = PROVIDERS.filter(
     (provider) => !custom.some((entry) => entry.id === provider.id),

@@ -130,7 +130,7 @@ Codemode 的 QuickJS 依赖必须保持按需加载：未开启时不加载声�
 - miro 历史保存在 client 内；恢复时优先采用模型上下文检查点（压缩摘要、完整工具配对，不保存原始 thinking），旧会话回退到可见 transcript；找不到可用历史才重建启动上下文。`/compact` 复用自动压缩执行器，但独立于普通 prompt，空闲时执行且可取消。
 - 技能发现与 `/skill:<name>` 展开在 `src/miro/skills.ts` 与 `agent-client.ts`；ACP provider 自己管理技能。
 
-可选 `codemode`（`miro.codemode.enabled`，默认关闭）保留普通工具，只给 QuickJS 注入当前实际可用的读取、搜索与 MCP 桥接。`tool-execution.ts` 是普通与嵌套调用的公共授权/执行入口；内部 MCP 必须按真实参数审批，不允许整段脚本一次授权。外层 codemode 不抢跑且独占批次，内部连续读取最多 8 条并行、MCP 为串行屏障。内部只发带 `parentToolCallId` 的审计事件，模型历史只有外层的一条配对结果；取消、超时、return 都要停止排队并等在途宿主任务收尾，不能自动重放或宣称远端已回滚。
+可选 `codemode`（`miro.codemode.enabled`，默认关闭）保留普通工具，只给 QuickJS 注入当前实际可用的读取、搜索与 MCP 桥接。`tool-execution.ts` 是普通与嵌套调用的公共授权/执行入口；内部 MCP 必须按真实参数审批，不允许整段脚本一次授权。外层 codemode 不抢跑且独占批次，内部连续读取最多 8 条并行、MCP 为串行屏障。内部只发带 `parentToolCallId` 的审计事件，模型历史只有外层的一条配对结果；取消、超时、return 都要停止排队并等在途宿主任务收尾，不能自动重放或宣称远端已回滚。worker 真正退出是另一件事：结果 settle 与 `close()` 都只表示已请求停止，所以进程级槽位由 `onWorkerStarted` 占到退出为止（`codemode-worker-slot.ts`），连续执行与子 agent 都不会让两代 QuickJS 堆并存。
 
 ## 权限与工具
 

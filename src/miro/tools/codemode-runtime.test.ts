@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CODEMODE_LIMITS, runCodemode } from "./codemode-runtime.ts";
+import { createWorkerGate } from "./codemode-worker-slot.ts";
 import { READ_FILE_DEFINITION } from "./read-file.ts";
 import { MCP_CALL_DEFINITION } from "./mcp.ts";
 
@@ -12,6 +13,38 @@ function deferred() {
   let resolve: (value?: any) => void;
   const promise = new Promise<any>((done) => { resolve = done; });
   return { promise, resolve };
+}
+
+/** 把 gate 换成记录调用次序的包装：断言槽位在 worker 退出后才交给下一次执行。 */
+function instrumentedGate() {
+  const gate = createWorkerGate();
+  const events: string[] = [];
+  return {
+    gate,
+    events,
+    hooks: {
+      get live() { return gate.live; },
+      get waiting() { return gate.waiting; },
+      async acquire(options: any) {
+        const slot = await gate.acquire(options);
+        events.push("acquire");
+        let released = false;
+        return {
+          timedOut: slot.timedOut,
+          release() { if (released) return; released = true; events.push("release"); slot.release(); },
+        };
+      },
+    },
+  };
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await Bun.sleep(10);
+  }
+  assert.ok(predicate(), "等待槽位归还超时");
 }
 
 test("codemode 使用真实 QuickJS 执行 async body 并返回选定的结构化结果", async () => {
@@ -127,4 +160,38 @@ test("codemode QuickJS 堆耗尽后失败，下次执行仍是独立 VM", async 
   const next = await run('return 42');
   assert.equal(next.failed, false);
   assert.match(next.output, /^42/);
+});
+
+test("codemode 在上一代 worker 真正退出前不启动新 VM", async () => {
+  const { gate, events, hooks } = instrumentedGate();
+  for (const code of ['return 1', 'return 2', 'throw new Error("boom")']) {
+    const result = await runCodemode({ code }, { executeNested: async () => ({ output: "ok" }) }, definitions, CODEMODE_LIMITS, { gate: hooks });
+    assert.equal(result.failed, code.startsWith("throw"));
+  }
+  await waitUntil(() => !gate.live, 5000);
+  // 归还发生在 worker 真正退出时，但一定早于下一次执行拿到槽位。
+  assert.deepEqual(events, ["acquire", "release", "acquire", "release", "acquire", "release"]);
+});
+
+test("codemode 超时和取消终止后仍会归还 worker 槽位", async () => {
+  const { gate, events, hooks } = instrumentedGate();
+  const timedOut = await runCodemode({ code: 'while(true){}' }, { executeNested: async () => ({ output: "ok" }) },
+    definitions, { ...CODEMODE_LIMITS, timeoutMs: 200 }, { gate: hooks });
+  assert.equal(timedOut.failed, true);
+  assert.match(timedOut.output, /timed out/);
+  await waitUntil(() => !gate.live, 5000);
+  const controller = new AbortController();
+  const started = deferred();
+  const cancelled = runCodemode({ code: 'await tools.read_file({path:"a"})' }, {
+    signal: controller.signal,
+    executeNested: async () => { started.resolve(); await Bun.sleep(50); return { output: "ok" }; },
+  }, definitions, CODEMODE_LIMITS, { gate: hooks });
+  await started.promise;
+  controller.abort(new Error("stop now"));
+  assert.equal((await cancelled).failed, true);
+  await waitUntil(() => !gate.live, 5000);
+  const next = await runCodemode({ code: 'return 7' }, { executeNested: async () => ({ output: "ok" }) }, definitions, CODEMODE_LIMITS, { gate: hooks });
+  assert.equal(next.failed, false);
+  await waitUntil(() => !gate.live, 5000);
+  assert.deepEqual(events.filter((event) => event === "acquire").length, events.filter((event) => event === "release").length);
 });

@@ -3,8 +3,10 @@ import { Validator } from "@cfworker/json-schema";
 import wasmPath from "quickjs-wasi/quickjs.wasm" with { type: "file" };
 import { CODEMODE_TOOL_NAMES } from "./codemode.ts";
 import { createCodemodeScheduler } from "./codemode-scheduler.ts";
+import { createWorkerGate } from "./codemode-worker-slot.ts";
 import { textContent } from "./shared.ts";
 import { fileURLToPath } from "node:url";
+import type { CodemodeWorkerGate } from "./codemode-worker-slot.ts";
 import type { ToolDefinition, ToolResult } from "./types.ts";
 import type { Schema } from "@cfworker/json-schema";
 
@@ -30,8 +32,11 @@ function workerUrl() {
   return new URL("./codemode-worker.ts", import.meta.url);
 }
 
+/** 进程级「活着的 worker」槽位：子 agent 的 codemode 与主回合共用同一个上限。 */
+const WORKER_GATE = createWorkerGate();
+
 /** 本层只管理 VM、预算和调度；真实授权及 runner 来自当前 agent loop。 */
-export async function runCodemode(input: any, context: any, definitions: ToolDefinition[], limits = CODEMODE_LIMITS): Promise<ToolResult> {
+export async function runCodemode(input: any, context: any, definitions: ToolDefinition[], limits = CODEMODE_LIMITS, { gate = WORKER_GATE }: { gate?: CodemodeWorkerGate } = {}): Promise<ToolResult> {
   if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some((key) => key !== "code") ||
       typeof input.code !== "string" || !input.code.trim() || input.code.length > limits.maxCodeChars) {
     return { error: `codemode: expected a non-empty code string of at most ${limits.maxCodeChars} characters` };
@@ -85,14 +90,27 @@ export async function runCodemode(input: any, context: any, definitions: ToolDef
       },
     };
   });
-  const sandbox = new CodemodeSandbox({ tools, timeoutMs: limits.timeoutMs, memoryLimitBytes: limits.memoryLimitBytes,
-    wasm: loadQuickJSWasm(fileURLToPath(new URL(wasmPath, import.meta.url))), workerUrl: workerUrl() });
+  // 上一个 worker 真正退出前不开新的 VM：结果 settle 与 close() 只表示已请求停止。
+  const slot = await gate.acquire({ signal });
+  let workerStarted = false;
   let result;
   try {
-    result = await sandbox.execute(input.code, { signal });
+    const sandbox = new CodemodeSandbox({ tools, timeoutMs: limits.timeoutMs, memoryLimitBytes: limits.memoryLimitBytes,
+      wasm: loadQuickJSWasm(fileURLToPath(new URL(wasmPath, import.meta.url))), workerUrl: workerUrl(),
+      // 槽位交给真正退出的那一刻；重复归还在 gate 内是空操作。
+      onWorkerStarted(exited: Promise<void>) {
+        workerStarted = true;
+        void exited.then(slot.release, slot.release);
+      } });
+    try {
+      result = await sandbox.execute(input.code, { signal });
+    } finally {
+      await sandbox.close();
+    }
   } finally {
-    await sandbox.close();
     await scheduler.close();
+    // 没走到 worker（wasm 装载或构造失败）时立即归还，否则由 onWorkerStarted 归还。
+    if (!workerStarted) slot.release();
   }
   const clip = (text: string, max: number) => {
     const marker = "\n[output truncated]";
